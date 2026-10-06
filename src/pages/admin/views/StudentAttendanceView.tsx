@@ -154,9 +154,9 @@ export const StudentAttendanceView: React.FC = () => {
       if (statusFilter === 'absent' && attended > 0) return;
       if (statusFilter === 'late' && lateCount === 0) return;
 
-      const effectiveTotal = Math.max(0, totalPossible - totalLeaves);
+      const effectiveTotal = Math.max(attended, Math.max(0, totalPossible - totalLeaves));
       const percentage = effectiveTotal > 0 
-        ? (attended / effectiveTotal) * 100 
+        ? Math.min(100, Math.round((attended / effectiveTotal) * 1000) / 10) 
         : (totalPossible > 0 && totalLeaves >= totalPossible ? 100 : 0);
 
       let breakdown: any = {};
@@ -164,8 +164,10 @@ export const StudentAttendanceView: React.FC = () => {
         const tAtt = record ? (record[type] || 0) : 0;
         const tTot = totals[type] || 0;
         const tLeaves = studentLeave[type] || 0;
-        const tEffective = Math.max(0, tTot - tLeaves);
-        const tPerc = tEffective > 0 ? (tAtt / tEffective) * 100 : (tTot > 0 && tLeaves >= tTot ? 100 : 0);
+        const tEffective = Math.max(tAtt, Math.max(0, tTot - tLeaves));
+        const tPerc = tEffective > 0 
+          ? Math.min(100, Math.round((tAtt / tEffective) * 1000) / 10) 
+          : (tTot > 0 && tLeaves >= tTot ? 100 : 0);
         breakdown[type] = { attended: tAtt, total: tTot, leaves: tLeaves, effectiveTotal: tEffective, percentage: tPerc };
       });
 
