@@ -117,11 +117,10 @@ export const LoginPage: React.FC = () => {
       trimmedId = '0';
     }
 
-    // Check if user is attempting to enter Admin or Floor Leader codes
+    // Check if user is attempting to enter Admin codes
     const isSpecialAdminCode = trimmedId === '172300' || trimmedId === '173200' || trimmedId.toLowerCase() === 'admin' || trimmedId === '36960';
-    const isLeaderCode = /^36(\d)90$/.test(trimmedId);
 
-    if (isSpecialAdminCode || isLeaderCode) {
+    if (isSpecialAdminCode) {
       setError('Invalid code');
       return;
     }
@@ -173,7 +172,7 @@ export const LoginPage: React.FC = () => {
         const token = response.data.data.token;
         const user = response.data.data.user;
         
-        if (user.role !== 'STUDENT') {
+        if (user.role !== 'STUDENT' && user.role !== 'LEADER') {
           setError('Invalid code');
           setConfirmModal(null);
           return;
@@ -185,7 +184,11 @@ export const LoginPage: React.FC = () => {
         setConfirmModal(null);
 
         login(token, user);
-        navigate('/student');
+        if (user.role === 'LEADER') {
+          navigate('/leader');
+        } else {
+          navigate('/student');
+        }
       } else {
         setConfirmModal(null);
         setError(response.data.message === 'Invalid Bank Code' ? 'Invalid code' : (response.data.message || 'Invalid code'));
