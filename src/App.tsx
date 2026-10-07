@@ -6,6 +6,7 @@ import { LoginPage } from './pages/auth/LoginPage';
 import { StudentDashboard } from './pages/student/StudentDashboard';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { LeaderDashboard } from './pages/leader/LeaderDashboard';
+import { SessionViewerDashboard } from './pages/viewer/SessionViewerDashboard';
 
 // Route Protectors
 const StudentRoute = ({ children }: { children: React.ReactNode }) => {
@@ -26,6 +27,12 @@ const LeaderRoute = ({ children }: { children: React.ReactNode }) => {
   return <>{children}</>;
 };
 
+const SessionViewerRoute = ({ children }: { children: React.ReactNode }) => {
+  const { token, user } = useAuth();
+  if (!token || (user?.role !== 'SESSION_VIEWER' && user?.role !== 'LEADER')) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+};
+
 function App() {
   const { token, user } = useAuth();
 
@@ -38,6 +45,7 @@ function App() {
             element={
               token ? (
                 user?.role === 'STUDENT' ? <Navigate to="/student" replace /> : 
+                user?.role === 'SESSION_VIEWER' ? <Navigate to="/viewer" replace /> :
                 user?.role === 'LEADER' ? <Navigate to="/leader" replace /> :
                 <Navigate to="/admin" replace />
               ) : (
@@ -54,6 +62,15 @@ function App() {
               <StudentRoute>
                 <StudentDashboard />
               </StudentRoute>
+            } 
+          />
+
+          <Route 
+            path="/viewer/*" 
+            element={
+              <SessionViewerRoute>
+                <SessionViewerDashboard />
+              </SessionViewerRoute>
             } 
           />
           

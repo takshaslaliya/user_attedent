@@ -172,7 +172,7 @@ export const LoginPage: React.FC = () => {
         const token = response.data.data.token;
         const user = response.data.data.user;
         
-        if (user.role !== 'STUDENT' && user.role !== 'LEADER') {
+        if (user.role !== 'STUDENT' && user.role !== 'LEADER' && user.role !== 'SESSION_VIEWER') {
           setError('Invalid code');
           setConfirmModal(null);
           return;
@@ -184,7 +184,9 @@ export const LoginPage: React.FC = () => {
         setConfirmModal(null);
 
         login(token, user);
-        if (user.role === 'LEADER') {
+        if (user.role === 'SESSION_VIEWER') {
+          navigate('/viewer');
+        } else if (user.role === 'LEADER') {
           navigate('/leader');
         } else {
           navigate('/student');
