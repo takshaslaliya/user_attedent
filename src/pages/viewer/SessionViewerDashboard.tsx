@@ -133,17 +133,36 @@ export const SessionViewerDashboard: React.FC = () => {
 
   const activeSessionObj = sessions.find(s => String(s.session_key).toLowerCase() === activeSessionKey.toLowerCase());
 
-  // Filtered List
-  const filteredList = attendanceList.filter(s => {
-    const matchesStatus = statusFilter === 'All' || s.status === statusFilter;
-    const matchesFloor = floorFilter === 'All' || String(s.floor_id) === floorFilter;
-    const q = searchQuery.toLowerCase().trim();
-    const matchesSearch = !q ||
-      String(s.student_code || '').toLowerCase().includes(q) ||
-      String(s.name || '').toLowerCase().includes(q) ||
-      String(s.room_number || '').toLowerCase().includes(q);
-    return matchesStatus && matchesFloor && matchesSearch;
-  });
+  // Filtered & Sorted List (Latest marked attendance comes first)
+  const filteredList = attendanceList
+    .filter(s => {
+      const matchesStatus = statusFilter === 'All' || s.status === statusFilter;
+      const matchesFloor = floorFilter === 'All' || String(s.floor_id) === floorFilter;
+      const q = searchQuery.toLowerCase().trim();
+      const matchesSearch = !q ||
+        String(s.student_code || '').toLowerCase().includes(q) ||
+        String(s.name || '').toLowerCase().includes(q) ||
+        String(s.room_number || '').toLowerCase().includes(q);
+      return matchesStatus && matchesFloor && matchesSearch;
+    })
+    .sort((a, b) => {
+      const aTime = a.marked_at ? new Date(a.marked_at).getTime() : 0;
+      const bTime = b.marked_at ? new Date(b.marked_at).getTime() : 0;
+      const aMarked = a.status === 'Present' || a.status === 'Late' || aTime > 0;
+      const bMarked = b.status === 'Present' || b.status === 'Late' || bTime > 0;
+
+      // 1. Marked students appear at the top
+      if (aMarked && !bMarked) return -1;
+      if (!aMarked && bMarked) return 1;
+
+      // 2. Latest marked student comes first
+      if (aMarked && bMarked) {
+        if (bTime !== aTime) return bTime - aTime;
+      }
+
+      // 3. Fallback: student code ascending
+      return String(a.student_code || '').localeCompare(String(b.student_code || ''), undefined, { numeric: true });
+    });
 
   const presentCount = attendanceList.filter(s => s.status === 'Present' || s.status === 'Late').length;
 
@@ -224,12 +243,6 @@ export const SessionViewerDashboard: React.FC = () => {
                       : `Session Waiting to Start • Scheduled Window: ${scheduleData?.start_time || '—'} to ${scheduleData?.end_time || '—'}`}
                   </p>
                 </div>
-              </div>
-
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, backgroundColor: 'rgba(255, 255, 255, 0.2)', padding: '4px 10px', borderRadius: '6px' }}>
-                  Auto-syncing every 3s
-                </span>
               </div>
             </div>
 
