@@ -158,7 +158,13 @@ export const StudentDashboard: React.FC = () => {
 
         const rawSchedules = payload.all_schedules || [];
         if (Array.isArray(rawSchedules)) {
-          setSchedules(rawSchedules);
+          const validSchedules = rawSchedules.filter((s: ScheduleItem) => {
+            if (s.is_active_today === false) return false;
+            if (s.start_time === '00:00' && s.end_time === '00:00') return false;
+            if (s.start_time === s.end_time) return false;
+            return true;
+          });
+          setSchedules(validSchedules);
         }
       }
 
