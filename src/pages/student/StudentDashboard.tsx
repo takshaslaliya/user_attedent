@@ -578,18 +578,6 @@ export const StudentDashboard: React.FC = () => {
                 <span className="pill-badge floor-badge">
                   🏢 Floor {displayFloor}
                 </span>
-                {studentProfile?.tags && studentProfile.tags.map(t => (
-                  <span 
-                    key={`tag_${t.id}`} 
-                    className="pill-badge custom-tag-badge"
-                    style={{ 
-                      backgroundColor: t.color ? `${t.color}18` : '#ede9fe',
-                      color: t.color || '#6d28d9'
-                    }}
-                  >
-                    👥 {t.name}
-                  </span>
-                ))}
               </div>
             </div>
           </div>
