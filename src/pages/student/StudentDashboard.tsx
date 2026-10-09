@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   Users, 
@@ -23,7 +23,8 @@ import {
   BarChart2,
   Check,
   Send,
-  Star
+  Star,
+  Vote
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import apiClient from '../../services/apiClient';
@@ -96,6 +97,9 @@ export const StudentDashboard: React.FC = () => {
   const [markError, setMarkError] = useState('');
   const [markSuccess, setMarkSuccess] = useState('');
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
+  
+  // Track auto-popup so it triggers once per dashboard visit for unsubmitted forms
+  const hasAutoPoppedRef = useRef(false);
 
   const [unauthorizedModal, setUnauthorizedModal] = useState<{
     show: boolean;
@@ -171,8 +175,17 @@ export const StudentDashboard: React.FC = () => {
       // Fetch active forms for the logged-in student
       try {
         const formsRes = await apiClient.get('/forms/student/active');
-        if (formsRes.data && formsRes.data.status === 'success') {
-          setActiveForms(formsRes.data.data || []);
+        if (formsRes.data && (formsRes.data.success || formsRes.data.status === 'ok' || formsRes.data.status === 'success')) {
+          const list: StudentFormItem[] = formsRes.data.data || [];
+          setActiveForms(list);
+
+          // Auto-popup trigger:
+          // Pop up the first unsubmitted form automatically on student login/dashboard load
+          const unsubmittedForm = list.find(f => !f.has_submitted);
+          if (unsubmittedForm && !hasAutoPoppedRef.current) {
+            hasAutoPoppedRef.current = true;
+            handleOpenFormModal(unsubmittedForm);
+          }
         }
       } catch (fErr) {
         console.error('Failed to load active forms', fErr);
@@ -185,6 +198,10 @@ export const StudentDashboard: React.FC = () => {
       setIsRefreshing(false);
     }
   };
+
+  const unsubmittedFormsCount = useMemo(() => {
+    return activeForms.filter(f => !f.has_submitted).length;
+  }, [activeForms]);
 
   const handleOpenFormModal = async (form: StudentFormItem) => {
     setSelectedForm(form);
@@ -254,7 +271,7 @@ export const StudentDashboard: React.FC = () => {
       const res = await apiClient.post(`/forms/${selectedForm.id}/submit`, {
         answers: formAnswers
       });
-      if (res.data.status === 'success') {
+      if (res.data.success || res.data.status === 'ok' || res.data.status === 'success') {
         setFormSubmitSuccess('Your response has been successfully recorded!');
         // Update local state
         setActiveForms(prev => prev.map(f => f.id === selectedForm.id ? { 
@@ -447,6 +464,24 @@ export const StudentDashboard: React.FC = () => {
           </div>
           
           <div className="student-header-actions">
+            {activeForms.length > 0 && (
+              <button 
+                className={`student-forms-header-btn ${unsubmittedFormsCount > 0 ? 'has-unsubmitted' : ''}`}
+                onClick={() => {
+                  const targetForm = activeForms.find(f => !f.has_submitted) || activeForms[0];
+                  handleOpenFormModal(targetForm);
+                }}
+                title="Active Forms & Polls"
+              >
+                <Vote size={16} />
+                <span>Forms</span>
+                {unsubmittedFormsCount > 0 ? (
+                  <span className="forms-badge-counter">{unsubmittedFormsCount}</span>
+                ) : (
+                  <span className="forms-badge-counter completed">✓</span>
+                )}
+              </button>
+            )}
             <button 
               className={`student-icon-btn ${isRefreshing ? 'is-loading' : ''}`}
               onClick={fetchStatus} 
@@ -463,6 +498,38 @@ export const StudentDashboard: React.FC = () => {
             </button>
           </div>
         </header>
+
+        {/* Action Required: Unsubmitted Form Banner */}
+        {unsubmittedFormsCount > 0 && (
+          <div 
+            className="unanswered-form-banner" 
+            onClick={() => {
+              const unsubmitted = activeForms.find(f => !f.has_submitted);
+              if (unsubmitted) handleOpenFormModal(unsubmitted);
+            }}
+          >
+            <div className="unanswered-banner-left">
+              <div className="unanswered-icon-circle">
+                <Sparkles size={16} />
+              </div>
+              <div className="unanswered-banner-texts">
+                <div className="unanswered-banner-title">
+                  {unsubmittedFormsCount === 1 ? 'New Form / Poll Available' : `${unsubmittedFormsCount} New Forms & Polls Available`}
+                </div>
+                <div className="unanswered-banner-sub">
+                  Please submit your response to administration. Click to answer now.
+                </div>
+              </div>
+            </div>
+            <button className="unanswered-banner-btn" onClick={(e) => {
+              e.stopPropagation();
+              const unsubmitted = activeForms.find(f => !f.has_submitted);
+              if (unsubmitted) handleOpenFormModal(unsubmitted);
+            }}>
+              Answer <ChevronRight size={14} />
+            </button>
+          </div>
+        )}
 
         {/* Live Active Banner if a session is currently open */}
         {activeLiveSession && (

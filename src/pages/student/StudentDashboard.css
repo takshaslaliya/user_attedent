@@ -137,6 +137,52 @@
   gap: 0.6rem;
 }
 
+.student-forms-header-btn {
+  height: 44px;
+  padding: 0 14px;
+  border-radius: 100px;
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  position: relative;
+}
+
+.student-forms-header-btn:hover {
+  background: rgba(255, 255, 255, 0.25);
+  transform: translateY(-2px);
+}
+
+.student-forms-header-btn.has-unsubmitted {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.6) 0%, rgba(139, 92, 246, 0.6) 100%);
+  border-color: rgba(147, 197, 253, 0.6);
+  box-shadow: 0 0 15px rgba(59, 130, 246, 0.4);
+}
+
+.forms-badge-counter {
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 10px;
+  min-width: 18px;
+  text-align: center;
+  line-height: 1;
+}
+
+.forms-badge-counter.completed {
+  background: #10b981;
+}
+
 .student-icon-btn {
   width: 44px;
   height: 44px;
@@ -168,6 +214,88 @@
 .student-icon-btn.is-loading {
   opacity: 0.75;
   cursor: wait;
+}
+
+/* Action Required: Unanswered Form Alert Banner */
+.unanswered-form-banner {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.9) 0%, rgba(109, 40, 217, 0.9) 100%);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  border-radius: 20px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #ffffff;
+  cursor: pointer;
+  box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.45);
+  animation: glowPulse 3s infinite alternate;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.unanswered-form-banner:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 30px -5px rgba(37, 99, 235, 0.55);
+}
+
+.unanswered-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+}
+
+.unanswered-icon-circle {
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fde047;
+}
+
+.unanswered-banner-texts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.unanswered-banner-title {
+  font-size: 0.98rem;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.2;
+}
+
+.unanswered-banner-sub {
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.3;
+}
+
+.unanswered-banner-btn {
+  background: #ffffff;
+  color: #1d4ed8;
+  border: none;
+  border-radius: 12px;
+  padding: 8px 14px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+  transition: all 0.2s ease;
+}
+
+.unanswered-banner-btn:hover {
+  background: #f8fafc;
+  transform: scale(1.03);
 }
 
 /* Active Live Banner */
