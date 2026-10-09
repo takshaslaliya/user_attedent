@@ -366,6 +366,21 @@ export const StudentDashboard: React.FC = () => {
     }
   }, [currentTime]);
 
+  // Convert 24-hour time "18:45" to 12-hour formatted string "6:45 PM"
+  const formatTo12Hour = (timeStr?: string | null): string => {
+    if (!timeStr) return '';
+    const parts = String(timeStr).trim().split(':');
+    if (parts.length < 2) return timeStr;
+    let h = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    if (isNaN(h) || isNaN(m)) return timeStr;
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12;
+    h = h ? h : 12;
+    const formattedMinutes = String(m).padStart(2, '0');
+    return `${h}:${formattedMinutes} ${ampm}`;
+  };
+
   // Initials generator (e.g. Harshil Patel -> HP)
   const getInitials = (name?: string) => {
     if (!name) return 'S';
@@ -456,7 +471,7 @@ export const StudentDashboard: React.FC = () => {
               <span className="live-pulse-dot"></span>
               <div>
                 <div className="active-banner-label">SESSION LIVE NOW</div>
-                <div className="active-banner-title">{activeLiveSession.session_name} ({activeLiveSession.start_time} - {activeLiveSession.end_time})</div>
+                <div className="active-banner-title">{activeLiveSession.session_name} ({formatTo12Hour(activeLiveSession.start_time)} - {formatTo12Hour(activeLiveSession.end_time)})</div>
               </div>
             </div>
             <button 
@@ -618,8 +633,8 @@ export const StudentDashboard: React.FC = () => {
                   <div key={session.session_key} className="schedule-timeline-row">
                     {/* Left Start Time */}
                     <div className="timeline-time-col">
-                      <span className="time-primary">{session.start_time || '21:00'}</span>
-                      <span className="time-secondary">{session.end_time || '21:30'}</span>
+                      <span className="time-primary">{formatTo12Hour(session.start_time)}</span>
+                      <span className="time-secondary">{formatTo12Hour(session.end_time)}</span>
                     </div>
 
                     {/* Timeline Connector & Dot */}
@@ -636,11 +651,11 @@ export const StudentDashboard: React.FC = () => {
                         <div className="session-info-group">
                           <h4 className="session-name-text">{session.session_name}</h4>
                           <div className="session-time-text">
-                            {session.start_time} – {session.end_time}
+                            {formatTo12Hour(session.start_time)} – {formatTo12Hour(session.end_time)}
                           </div>
                           {session.late_time && (
                             <span className="session-late-pill">
-                              Late after {session.late_time}
+                              Late after {formatTo12Hour(session.late_time)}
                             </span>
                           )}
                         </div>
@@ -911,7 +926,7 @@ export const StudentDashboard: React.FC = () => {
               {markingSession.session_name} Attendance
             </h3>
             <p className="modal-subtitle">
-              Session window: {markingSession.start_time} – {markingSession.end_time}
+              Session window: {formatTo12Hour(markingSession.start_time)} – {formatTo12Hour(markingSession.end_time)}
             </p>
 
             {markSuccess ? (
