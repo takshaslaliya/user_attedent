@@ -17,7 +17,13 @@ import {
   Radio,
   Building,
   DoorClosed,
-  ChevronRight
+  ChevronRight,
+  ClipboardList,
+  FileText,
+  BarChart2,
+  Check,
+  Send,
+  Star
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import apiClient from '../../services/apiClient';
@@ -51,10 +57,39 @@ interface ScheduleItem {
   marked_at?: string | null;
 }
 
+interface StudentFormItem {
+  id: number;
+  title: string;
+  description?: string;
+  form_type: 'poll' | 'form';
+  fields: Array<{
+    id: string;
+    label: string;
+    type: 'radio' | 'checkbox' | 'boolean' | 'text' | 'textarea' | 'rating';
+    options?: string[];
+    required?: boolean;
+  }>;
+  start_time: string;
+  end_time: string;
+  is_mandatory: boolean;
+  has_viewed: boolean;
+  has_submitted: boolean;
+  my_response?: {
+    submitted_at: string;
+    answers: Record<string, any>;
+  };
+}
+
 export const StudentDashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
   const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
+  const [activeForms, setActiveForms] = useState<StudentFormItem[]>([]);
+  const [selectedForm, setSelectedForm] = useState<StudentFormItem | null>(null);
+  const [formAnswers, setFormAnswers] = useState<Record<string, any>>({});
+  const [isSubmittingForm, setIsSubmittingForm] = useState(false);
+  const [formSubmitSuccess, setFormSubmitSuccess] = useState('');
+  const [formSubmitError, setFormSubmitError] = useState('');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [markingSession, setMarkingSession] = useState<ScheduleItem | null>(null);
   const [isMarking, setIsMarking] = useState(false);
@@ -126,12 +161,113 @@ export const StudentDashboard: React.FC = () => {
           setSchedules(rawSchedules);
         }
       }
+
+      // Fetch active forms for the logged-in student
+      try {
+        const formsRes = await apiClient.get('/forms/student/active');
+        if (formsRes.data && formsRes.data.status === 'success') {
+          setActiveForms(formsRes.data.data || []);
+        }
+      } catch (fErr) {
+        console.error('Failed to load active forms', fErr);
+      }
     } catch (err: any) {
       if (err.response?.status === 401) {
         logout();
       }
     } finally {
       setIsRefreshing(false);
+    }
+  };
+
+  const handleOpenFormModal = async (form: StudentFormItem) => {
+    setSelectedForm(form);
+    setFormSubmitSuccess('');
+    setFormSubmitError('');
+
+    // Pre-populate if already submitted or initialize defaults
+    if (form.has_submitted && form.my_response?.answers) {
+      setFormAnswers(form.my_response.answers);
+    } else {
+      const initial: Record<string, any> = {};
+      form.fields.forEach(f => {
+        if (f.type === 'checkbox') initial[f.id] = [];
+        else if (f.type === 'boolean') initial[f.id] = null;
+        else if (f.type === 'rating') initial[f.id] = 0;
+        else initial[f.id] = '';
+      });
+      setFormAnswers(initial);
+    }
+
+    // Immediately record view to backend (seen_not_answered tracking)
+    try {
+      await apiClient.post(`/forms/${form.id}/view`);
+      // Update local state to viewed
+      setActiveForms(prev => prev.map(f => f.id === form.id ? { ...f, has_viewed: true } : f));
+    } catch (viewErr) {
+      console.error('Failed to log form view', viewErr);
+    }
+  };
+
+  const handleAnswerChange = (fieldId: string, value: any) => {
+    setFormAnswers(prev => ({
+      ...prev,
+      [fieldId]: value
+    }));
+  };
+
+  const handleCheckboxToggle = (fieldId: string, option: string) => {
+    setFormAnswers(prev => {
+      const currentList: string[] = Array.isArray(prev[fieldId]) ? prev[fieldId] : [];
+      if (currentList.includes(option)) {
+        return { ...prev, [fieldId]: currentList.filter(o => o !== option) };
+      } else {
+        return { ...prev, [fieldId]: [...currentList, option] };
+      }
+    });
+  };
+
+  const handleSubmitFormResponse = async () => {
+    if (!selectedForm) return;
+    setFormSubmitError('');
+    setFormSubmitSuccess('');
+
+    // Validation for required fields
+    for (const field of selectedForm.fields) {
+      if (field.required) {
+        const val = formAnswers[field.id];
+        if (val === undefined || val === null || val === '' || (Array.isArray(val) && val.length === 0)) {
+          setFormSubmitError(`Please fill in required question: "${field.label}"`);
+          return;
+        }
+      }
+    }
+
+    setIsSubmittingForm(true);
+    try {
+      const res = await apiClient.post(`/forms/${selectedForm.id}/submit`, {
+        answers: formAnswers
+      });
+      if (res.data.status === 'success') {
+        setFormSubmitSuccess('Your response has been successfully recorded!');
+        // Update local state
+        setActiveForms(prev => prev.map(f => f.id === selectedForm.id ? { 
+          ...f, 
+          has_submitted: true, 
+          my_response: { submitted_at: new Date().toISOString(), answers: formAnswers } 
+        } : f));
+        
+        setTimeout(() => {
+          setSelectedForm(null);
+          setFormSubmitSuccess('');
+        }, 1600);
+      } else {
+        throw new Error(res.data.message || 'Failed to submit response');
+      }
+    } catch (err: any) {
+      setFormSubmitError(err.response?.data?.message || err.message || 'Failed to submit form');
+    } finally {
+      setIsSubmittingForm(false);
     }
   };
 
@@ -383,6 +519,64 @@ export const StudentDashboard: React.FC = () => {
           </div>
         </div>
 
+        {/* Active Polls & Feedback Forms Section */}
+        {activeForms.length > 0 && (
+          <div className="forms-section-wrapper">
+            <div className="schedule-section-header">
+              <div className="schedule-title-group">
+                <div className="schedule-accent-bar" style={{ background: 'linear-gradient(to bottom, #3b82f6, #8b5cf6)' }}></div>
+                <h3 className="schedule-section-title">Active Polls & Forms</h3>
+              </div>
+              <span className="schedule-session-count" style={{ background: '#ede9fe', color: '#6d28d9' }}>
+                {activeForms.length} Active
+              </span>
+            </div>
+
+            <div className="forms-list-container">
+              {activeForms.map((form) => {
+                const isMandatory = form.is_mandatory;
+                const isPoll = form.form_type === 'poll';
+                const hasSubmitted = form.has_submitted;
+
+                return (
+                  <div 
+                    key={`form_${form.id}`} 
+                    className={`form-student-card ${isMandatory ? 'mandatory' : ''} ${isPoll ? 'poll-type' : ''}`}
+                    onClick={() => handleOpenFormModal(form)}
+                  >
+                    <div className="form-card-left">
+                      <div className={`form-icon-pill ${isPoll ? 'poll' : 'form'}`}>
+                        {isPoll ? <BarChart2 size={22} /> : <ClipboardList size={22} />}
+                      </div>
+
+                      <div>
+                        <div className="form-info-title">{form.title}</div>
+                        <div className="form-meta-row">
+                          {isMandatory && <span className="mandatory-tag">Required</span>}
+                          <span>{isPoll ? '📊 Quick Poll' : '📝 Multi-field Form'}</span>
+                          <span>• Closes: {new Date(form.end_time).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div>
+                      {hasSubmitted ? (
+                        <button className="form-status-btn submitted-btn" onClick={(e) => { e.stopPropagation(); handleOpenFormModal(form); }}>
+                          <CheckCircle size={15} /> Submitted
+                        </button>
+                      ) : (
+                        <button className="form-status-btn fill-btn" onClick={(e) => { e.stopPropagation(); handleOpenFormModal(form); }}>
+                          {isPoll ? 'Vote Now' : 'Fill Form'} <ChevronRight size={15} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Today's Schedule Section */}
         <div className="schedule-section-wrapper">
           <div className="schedule-section-header">
@@ -478,6 +672,213 @@ export const StudentDashboard: React.FC = () => {
         </div>
 
       </div>
+
+      {/* Form / Poll Filler Modal */}
+      {selectedForm && (
+        <div className="modal-overlay" onClick={() => setSelectedForm(null)}>
+          <div className="form-modal-box" onClick={(e) => e.stopPropagation()}>
+            <button 
+              className="modal-close-btn"
+              onClick={() => setSelectedForm(null)}
+            >
+              <X size={18} />
+            </button>
+
+            <div className="form-modal-header">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                <span className={`pill-badge ${selectedForm.form_type === 'poll' ? 'poll' : 'form'}`} style={{ background: '#eff6ff', color: '#2563eb', fontWeight: 700 }}>
+                  {selectedForm.form_type === 'poll' ? '📊 Poll' : '📝 Feedback Form'}
+                </span>
+                {selectedForm.is_mandatory && (
+                  <span className="mandatory-tag">Mandatory</span>
+                )}
+                {selectedForm.has_submitted && (
+                  <span style={{ fontSize: '0.75rem', fontWeight: 700, color: '#059669', background: '#ecfdf5', padding: '2px 8px', borderRadius: '6px' }}>
+                    ✓ Already Submitted
+                  </span>
+                )}
+              </div>
+              <h3 className="form-modal-title">{selectedForm.title}</h3>
+              {selectedForm.description && (
+                <p className="form-modal-desc">{selectedForm.description}</p>
+              )}
+            </div>
+
+            {formSubmitSuccess ? (
+              <div className="modal-success-box" style={{ padding: '2rem 1rem' }}>
+                <div className="modal-success-icon-wrap">
+                  <CheckCircle size={44} />
+                </div>
+                <h4 className="modal-success-title">Thank You!</h4>
+                <p className="modal-success-msg">{formSubmitSuccess}</p>
+              </div>
+            ) : (
+              <div>
+                <div className="form-questions-list">
+                  {selectedForm.fields.map((field, idx) => {
+                    const currentVal = formAnswers[field.id];
+                    const isReadOnly = selectedForm.has_submitted;
+
+                    return (
+                      <div key={field.id} className="form-question-card">
+                        <label className="form-question-label">
+                          <span>
+                            <strong style={{ marginRight: '6px' }}>Q{idx + 1}.</strong>
+                            {field.label}
+                            {field.required && <span className="required-asterisk">*</span>}
+                          </span>
+                        </label>
+
+                        {/* Radio / Single Choice */}
+                        {field.type === 'radio' && (
+                          <div className="form-options-group">
+                            {(field.options || []).map((opt) => (
+                              <label 
+                                key={opt} 
+                                className={`choice-option-row ${currentVal === opt ? 'selected' : ''}`}
+                              >
+                                <input 
+                                  type="radio" 
+                                  name={`field_${field.id}`} 
+                                  value={opt} 
+                                  checked={currentVal === opt}
+                                  disabled={isReadOnly}
+                                  onChange={() => handleAnswerChange(field.id, opt)}
+                                />
+                                <span>{opt}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Checkboxes / Multiple Choice */}
+                        {field.type === 'checkbox' && (
+                          <div className="form-options-group">
+                            {(field.options || []).map((opt) => {
+                              const isChecked = Array.isArray(currentVal) && currentVal.includes(opt);
+                              return (
+                                <label 
+                                  key={opt} 
+                                  className={`choice-option-row ${isChecked ? 'selected' : ''}`}
+                                >
+                                  <input 
+                                    type="checkbox" 
+                                    name={`field_${field.id}_${opt}`} 
+                                    value={opt} 
+                                    checked={isChecked}
+                                    disabled={isReadOnly}
+                                    onChange={() => handleCheckboxToggle(field.id, opt)}
+                                  />
+                                  <span>{opt}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* True / False Boolean */}
+                        {field.type === 'boolean' && (
+                          <div className="boolean-toggle-group">
+                            <button
+                              type="button"
+                              disabled={isReadOnly}
+                              className={`bool-btn true-btn ${currentVal === true ? 'active' : ''}`}
+                              onClick={() => handleAnswerChange(field.id, true)}
+                            >
+                              ✓ True / Yes
+                            </button>
+                            <button
+                              type="button"
+                              disabled={isReadOnly}
+                              className={`bool-btn false-btn ${currentVal === false ? 'active' : ''}`}
+                              onClick={() => handleAnswerChange(field.id, false)}
+                            >
+                              ✕ False / No
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Star Rating (1-5) */}
+                        {field.type === 'rating' && (
+                          <div className="rating-stars-container">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <button
+                                key={star}
+                                type="button"
+                                disabled={isReadOnly}
+                                className="star-btn"
+                                onClick={() => handleAnswerChange(field.id, star)}
+                              >
+                                <Star 
+                                  size={30} 
+                                  fill={(currentVal || 0) >= star ? '#f59e0b' : 'none'} 
+                                  color={(currentVal || 0) >= star ? '#f59e0b' : '#cbd5e1'} 
+                                />
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Short Text */}
+                        {field.type === 'text' && (
+                          <input 
+                            type="text" 
+                            className="form-text-input"
+                            placeholder="Type your response..."
+                            value={currentVal || ''}
+                            disabled={isReadOnly}
+                            onChange={(e) => handleAnswerChange(field.id, e.target.value)}
+                          />
+                        )}
+
+                        {/* Textarea */}
+                        {field.type === 'textarea' && (
+                          <textarea 
+                            rows={3}
+                            className="form-textarea-input"
+                            placeholder="Type your detailed response..."
+                            value={currentVal || ''}
+                            disabled={isReadOnly}
+                            onChange={(e) => handleAnswerChange(field.id, e.target.value)}
+                          />
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {formSubmitError && (
+                  <div className="modal-error-badge" style={{ marginBottom: '1rem' }}>
+                    <AlertTriangle size={15} />
+                    <span>{formSubmitError}</span>
+                  </div>
+                )}
+
+                <div className="form-modal-actions">
+                  <button 
+                    type="button" 
+                    className="modal-close-btn" 
+                    style={{ position: 'static', padding: '0.75rem 1.25rem', borderRadius: '12px', background: '#f1f5f9' }}
+                    onClick={() => setSelectedForm(null)}
+                  >
+                    {selectedForm.has_submitted ? 'Close' : 'Cancel'}
+                  </button>
+                  {!selectedForm.has_submitted && (
+                    <button 
+                      type="button" 
+                      className="form-submit-btn"
+                      disabled={isSubmittingForm}
+                      onClick={handleSubmitFormResponse}
+                    >
+                      {isSubmittingForm ? 'Submitting...' : 'Submit Answers'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Mark Attendance Modal */}
       {markingSession && (
