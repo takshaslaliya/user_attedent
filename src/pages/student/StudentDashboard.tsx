@@ -1,23 +1,63 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { LogOut, Phone, Mail, DoorClosed, CheckCircle, Fingerprint, Clock, RotateCw, AlertTriangle } from 'lucide-react';
+import { 
+  Users, 
+  Moon, 
+  BookOpen, 
+  Sparkles, 
+  RotateCw, 
+  LogOut, 
+  Phone, 
+  CheckCircle, 
+  Fingerprint, 
+  AlertTriangle, 
+  X,
+  Calendar,
+  Layers,
+  DoorClosed
+} from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import apiClient from '../../services/apiClient';
 import { connectToESP32 } from '../../services/bleService';
-import { HamsCard } from '../../components/HamsCard';
 import { RadarAnimation } from '../../components/RadarAnimation';
 import './StudentDashboard.css';
 
+interface StudentProfile {
+  id: number | string;
+  student_code: string;
+  name: string;
+  room: string;
+  floor_id: number | string;
+  phone: string;
+  tags: Array<{ id: number; name: string; color?: string }>;
+}
+
+interface ScheduleItem {
+  session_key: string;
+  session_name: string;
+  icon_name?: string;
+  start_time: string;
+  end_time: string;
+  late_time?: string | null;
+  status: 'marked' | 'live' | 'closed' | 'upcoming';
+  is_marked?: boolean;
+  is_open_now?: boolean;
+  is_closed?: boolean;
+  is_upcoming?: boolean;
+  is_active_today?: boolean;
+  marked_at?: string | null;
+}
+
 export const StudentDashboard: React.FC = () => {
   const { user, logout } = useAuth();
-  const [isMarking, setIsMarking] = useState(false);
+  const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
+  const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [alreadyMarked, setAlreadyMarked] = useState(false);
-  const [attendanceActive, setAttendanceActive] = useState(false);
-  const [schedule, setSchedule] = useState({ start: '', end: '', sessionName: 'Night' });
-  const [allSchedules, setAllSchedules] = useState<Array<{ session_key: string; session_name: string; start_time: string; end_time: string }>>([]);
-  const [error, setError] = useState('');
-  const [success, setSuccess] = useState('');
+  const [markingSession, setMarkingSession] = useState<ScheduleItem | null>(null);
+  const [isMarking, setIsMarking] = useState(false);
+  const [markError, setMarkError] = useState('');
+  const [markSuccess, setMarkSuccess] = useState('');
+
   const [unauthorizedModal, setUnauthorizedModal] = useState<{
     show: boolean;
     message: string;
@@ -30,12 +70,11 @@ export const StudentDashboard: React.FC = () => {
 
   useEffect(() => {
     fetchStatus();
-    // Auto-poll status every 10 seconds to catch immediately when a window opens
-    const interval = setInterval(fetchStatus, 10000);
+    const interval = setInterval(fetchStatus, 8000);
     return () => clearInterval(interval);
   }, []);
 
-  // Handle auto-refresh and auto-logout timer when unauthorized
+  // Handle unauthorized auto-logout countdown
   useEffect(() => {
     if (!unauthorizedModal.show) return;
     if (unauthorizedModal.countdown <= 0) {
@@ -49,43 +88,30 @@ export const StudentDashboard: React.FC = () => {
     return () => clearTimeout(timer);
   }, [unauthorizedModal.show, unauthorizedModal.countdown, logout]);
 
-  const handleForceLogout = () => {
-    logout();
-    window.location.href = '/login';
-  };
-
   const fetchStatus = async () => {
     setIsRefreshing(true);
     try {
       const response = await apiClient.get('/attendance/my-status');
       if (response.data && (response.data.success || response.data.status === 'ok')) {
         const payload = response.data.data || response.data;
-        const already_marked = payload.already_marked ?? false;
-        const attendance_active = payload.attendance_active ?? false;
-        const start_time = payload.start_time || '';
-        const end_time = payload.end_time || '';
-        const session_name = payload.session_name || 'Night Attendance';
-        const all_schedules = payload.all_schedules || [];
-        const schedulesObj = payload.schedules || {};
+        
+        if (payload.student) {
+          setStudentProfile(payload.student);
+        } else if (user) {
+          setStudentProfile({
+            id: user.name || '',
+            student_code: '',
+            name: user.name || 'Student',
+            room: user.room || 'N/A',
+            floor_id: user.floor_id || '',
+            phone: user.phone || '',
+            tags: []
+          });
+        }
 
-        setAlreadyMarked(Boolean(already_marked));
-        setAttendanceActive(Boolean(attendance_active));
-        setSchedule({ 
-          start: start_time || (all_schedules[0]?.start_time) || '22:30', 
-          end: end_time || (all_schedules[0]?.end_time) || '23:05',
-          sessionName: session_name || (all_schedules[0]?.session_name) || 'Night Attendance'
-        });
-
-        if (Array.isArray(all_schedules) && all_schedules.length > 0) {
-          setAllSchedules(all_schedules);
-        } else if (Object.keys(schedulesObj).length > 0) {
-          const mapped = Object.keys(schedulesObj).map(k => ({
-            session_key: k,
-            session_name: schedulesObj[k].name || (k.charAt(0).toUpperCase() + k.slice(1) + ' Attendance'),
-            start_time: schedulesObj[k].start || schedulesObj[k].start_time || '00:00',
-            end_time: schedulesObj[k].end || schedulesObj[k].end_time || '00:00'
-          }));
-          setAllSchedules(mapped);
+        const rawSchedules = payload.all_schedules || [];
+        if (Array.isArray(rawSchedules)) {
+          setSchedules(rawSchedules);
         }
       }
     } catch (err: any) {
@@ -97,43 +123,45 @@ export const StudentDashboard: React.FC = () => {
     }
   };
 
-  const handleMarkAttendance = async () => {
-    if (alreadyMarked) {
-      setError('Your attendance is already marked for today.');
-      return;
-    }
-    if (!attendanceActive && schedule.start && schedule.end) {
-      setError(`Attendance is only available during scheduled windows.`);
-      return;
-    }
+  const handleOpenMarkModal = (session: ScheduleItem) => {
+    setMarkingSession(session);
+    setMarkError('');
+    setMarkSuccess('');
+  };
 
+  const handleTriggerMarkAttendance = async (session: ScheduleItem) => {
     setIsMarking(true);
-    setError('');
-    setSuccess('');
+    setMarkError('');
+    setMarkSuccess('');
 
     try {
-      // 1. Connect to ESP32 GATT service and exchange string
+      // 1. Connect to ESP32 GATT service and exchange challenge token
       const bleConnection = await connectToESP32();
       let tokenToUse = bleConnection.token;
 
-      // 2. If token is NONE, request challenge token from backend and write to ESP32
-      if (tokenToUse === 'NONE') {
-        const reqRes = await apiClient.post('/attendance/challenge', { rssi: -50 });
-        if (reqRes.data.success) {
-          tokenToUse = reqRes.data.challenge;
-          // Write token string to ESP32 to activate blue LED indicator
-          await bleConnection.writeToken(tokenToUse, 5);
-        }
-      }
-
-      // 3. Disconnect from ESP32 immediately to free it for other students
+      // 2. Disconnect from ESP32 immediately to free up BLE slot for classmates
       bleConnection.disconnect();
 
-      // 4. Submit verified token string to backend to mark attendance
-      const res = await apiClient.post('/attendance/mark', { proof: tokenToUse, rssi: -50 });
+      // 3. Submit verified token with session_key to backend
+      const res = await apiClient.post('/attendance/mark', {
+        proof: tokenToUse,
+        rssi: -50,
+        session_key: session.session_key
+      });
+
       if (res.data.success) {
-        setAlreadyMarked(true);
-        setSuccess('Attendance marked successfully!');
+        setMarkSuccess(`Attendance recorded for ${session.session_name}!`);
+        // Update local session status immediately
+        setSchedules(prev => prev.map(s => {
+          if (s.session_key === session.session_key) {
+            return { ...s, status: 'marked', is_marked: true };
+          }
+          return s;
+        }));
+        setTimeout(() => {
+          setMarkingSession(null);
+          setMarkSuccess('');
+        }, 1800);
       } else {
         throw new Error(res.data.message || 'Failed to mark attendance.');
       }
@@ -150,225 +178,361 @@ export const StudentDashboard: React.FC = () => {
         });
         return;
       }
-      setError(err.response?.data?.message || err.message || 'An unexpected error occurred during attendance marking.');
+      setMarkError(err.response?.data?.message || err.message || 'An unexpected error occurred during attendance marking.');
     } finally {
       setIsMarking(false);
     }
   };
 
-  const formatTime12 = (t?: string) => {
-    if (!t || t === '00:00' || t === '00:00:00') return '';
-    const parts = t.slice(0, 5).split(':').map(Number);
-    if (isNaN(parts[0]) || isNaN(parts[1])) return t;
-    const h = parts[0];
-    const m = parts[1];
-    const hour = h > 12 ? h - 12 : (h === 0 ? 12 : h);
-    const period = h >= 12 ? 'PM' : 'AM';
-    return `${String(hour).padStart(2, '0')}:${String(m).padStart(2, '0')} ${period}`;
+  // Format today's date banner string (e.g. "FRIDAY, 9 OCTOBER")
+  const getTodayDateHeader = () => {
+    try {
+      const now = new Date();
+      return now.toLocaleDateString('en-US', {
+        weekday: 'long',
+        day: 'numeric',
+        month: 'long',
+        timeZone: 'Asia/Kolkata'
+      }).toUpperCase();
+    } catch (e) {
+      return 'TODAY';
+    }
   };
 
-  return (
-    <div className="dashboard-container">
-      <header className="dashboard-header glass">
-        <h2>Dashboard</h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <button 
-            className="logout-btn" 
-            onClick={fetchStatus} 
-            title="Refresh status"
-            style={{ animation: isRefreshing ? 'spin 1s linear infinite' : 'none' }}
-          >
-            <RotateCw size={20} />
-          </button>
-          <button className="logout-btn" onClick={logout} title="Logout">
-            <LogOut size={20} />
-          </button>
+  // Initials generator (e.g. Harshil Patel -> HP)
+  const getInitials = (name?: string) => {
+    if (!name) return 'S';
+    const parts = name.trim().split(' ').filter(Boolean);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  };
+
+  const getSessionIcon = (session: ScheduleItem) => {
+    const key = (session.session_key || '').toLowerCase();
+    const name = (session.session_name || '').toLowerCase();
+    if (key.includes('night') || name.includes('night')) {
+      return (
+        <div className="session-icon-box moon-icon">
+          <Moon size={22} />
         </div>
-      </header>
+      );
+    }
+    if (key.includes('aarti') || key.includes('assembly') || name.includes('aarti') || name.includes('assembly') || name.includes('meeting')) {
+      return (
+        <div className="session-icon-box users-icon">
+          <Users size={22} />
+        </div>
+      );
+    }
+    return (
+      <div className="session-icon-box class-icon">
+        <BookOpen size={22} />
+      </div>
+    );
+  };
 
-      <div className="dashboard-content">
+  const displayName = studentProfile?.name || user?.name || 'Student';
+  const displayId = studentProfile?.student_code || studentProfile?.id || '';
+  const displayRoom = studentProfile?.room || user?.room || '913';
+  const displayFloor = studentProfile?.floor_id !== undefined && studentProfile?.floor_id !== null ? studentProfile?.floor_id : (user?.floor_id || '9');
+  const displayPhone = studentProfile?.phone || user?.phone || '9725714912';
+
+  return (
+    <div className="student-dashboard-root">
+      <div className="student-dashboard-container">
         
-        {/* Profile Card */}
-        <HamsCard padding="2rem" className="profile-card">
-          <div className="avatar">
-            {user?.name?.[0]?.toUpperCase() || 'T'}
+        {/* Top Header */}
+        <header className="student-header">
+          <div>
+            <div className="student-date-badge">
+              <Calendar size={14} />
+              <span>{getTodayDateHeader()}</span>
+            </div>
+            <h1 className="student-header-title">Attendance</h1>
+            <p className="student-header-subtitle">Daily routine & verification</p>
           </div>
-          <h1 className="welcome-text">Welcome, {user?.name || 'Student'}!</h1>
           
-          <div className="info-list">
-            <div className="info-row">
-              <div className="info-icon-wrapper"><DoorClosed size={20} /></div>
-              <div className="info-text">
-                <span className="info-label">ROOM</span>
-                <span className="info-value">{user?.room || 'Not Assigned'}</span>
-              </div>
+          <div className="student-header-actions">
+            <button 
+              className="student-icon-btn" 
+              onClick={fetchStatus} 
+              title="Refresh Schedule"
+            >
+              <RotateCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
+            </button>
+            <button 
+              className="student-icon-btn" 
+              onClick={logout} 
+              title="Logout"
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
+        </header>
+
+        {/* Student Profile Card */}
+        <div className="student-profile-card">
+          <div className="profile-top-row">
+            <div className="profile-avatar-circle">
+              {getInitials(displayName)}
             </div>
-            <div className="info-row">
-              <div className="info-icon-wrapper"><Phone size={20} /></div>
-              <div className="info-text">
-                <span className="info-label">PHONE</span>
-                <span className="info-value">{user?.phone || 'N/A'}</span>
-              </div>
-            </div>
-            <div className="info-row">
-              <div className="info-icon-wrapper"><Mail size={20} /></div>
-              <div className="info-text">
-                <span className="info-label">EMAIL</span>
-                <span className="info-value">{user?.email || 'N/A'}</span>
+            
+            <div className="profile-main-info">
+              <h2 className="profile-student-name">{displayName}</h2>
+              
+              <div className="profile-badges-row">
+                {displayId && (
+                  <span className="pill-badge id-badge">
+                    🪪 {displayId}
+                  </span>
+                )}
+                <span className="pill-badge room-badge">
+                  🚪 Room {displayRoom}
+                </span>
+                <span className="pill-badge floor-badge">
+                  🏢 Floor {displayFloor}
+                </span>
+                {studentProfile?.tags && studentProfile.tags.map(t => (
+                  <span 
+                    key={`tag_${t.id}`} 
+                    className="pill-badge custom-tag-badge"
+                    style={{ 
+                      backgroundColor: t.color ? `${t.color}18` : '#ede9fe',
+                      color: t.color || '#6d28d9'
+                    }}
+                  >
+                    👥 {t.name}
+                  </span>
+                ))}
               </div>
             </div>
           </div>
-        </HamsCard>
 
-        {/* Schedule Info */}
-        <div className={`schedule-banner glass ${attendanceActive ? 'active' : 'inactive'}`}>
-          <div className="status-dot"></div>
-          <div style={{ flex: 1 }}>
-            <div className="status-title">
-              {attendanceActive ? `Attendance is OPEN (${schedule.sessionName})` : 'Attendance is CLOSED'}
+          <div className="profile-bottom-row">
+            <div className="profile-phone-info">
+              <Phone size={14} color="#64748b" />
+              <span>{displayPhone}</span>
             </div>
-            <div className="status-time">
-              <div style={{ fontWeight: 600, marginTop: '2px', marginBottom: '2px' }}>Schedules:</div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                {allSchedules.length > 0 ? (
-                  allSchedules.map((s: any) => {
-                    const isActiveToday = s.is_active_today !== false && s.start_time !== '00:00';
-                    const startFormatted = formatTime12(isActiveToday ? s.start_time : (s.base_start_time || s.start_time));
-                    const endFormatted = formatTime12(isActiveToday ? s.end_time : (s.base_end_time || s.end_time));
-                    const daysLabel = s.days_label && s.days_label !== 'Every day' ? s.days_label : null;
 
-                    return (
-                      <div key={s.session_key} style={{ fontSize: '0.85rem' }}>
-                        <span style={{ fontWeight: 600 }}>{s.session_name}:</span>{' '}
-                        {isActiveToday ? (
-                          <span>
-                            {startFormatted} – {endFormatted}
-                            {daysLabel && <span style={{ opacity: 0.8, fontSize: '0.8rem', marginLeft: '6px' }}>({daysLabel})</span>}
-                          </span>
-                        ) : (
-                          <span style={{ color: 'rgba(255,255,255,0.75)' }}>
-                            {daysLabel ? `${daysLabel} only` : 'Not Scheduled Today'}
-                            {startFormatted && endFormatted && ` (${startFormatted} – ${endFormatted})`}
+            <div className="verified-pill">
+              <CheckCircle size={14} />
+              <span>Verified</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Today's Schedule Section */}
+        <div>
+          <div className="schedule-section-header">
+            <div className="schedule-title-group">
+              <div className="schedule-accent-bar"></div>
+              <h3 className="schedule-section-title">Today's Schedule</h3>
+            </div>
+            <span className="schedule-session-count">
+              {schedules.length} session{schedules.length === 1 ? '' : 's'}
+            </span>
+          </div>
+
+          <div className="schedule-timeline-container">
+            {schedules.map((session, idx) => {
+              const isLive = session.status === 'live';
+              const isMarked = session.status === 'marked';
+              const isClosed = session.status === 'closed';
+              const isUpcoming = session.status === 'upcoming';
+
+              let cardClass = 'session-card';
+              if (isLive) cardClass += ' live-card';
+              else if (isMarked) cardClass += ' marked-card';
+              else if (isClosed) cardClass += ' closed-card';
+
+              return (
+                <div key={session.session_key} className="schedule-timeline-row">
+                  {/* Left Start Time */}
+                  <div className="timeline-time-col">
+                    {session.start_time || '21:00'}
+                  </div>
+
+                  {/* Timeline Dot */}
+                  <div className="timeline-dot-wrapper">
+                    <div className={`timeline-dot ${session.status}`}></div>
+                  </div>
+
+                  {/* Session Card */}
+                  <div className={cardClass}>
+                    <div className="session-left-group">
+                      {getSessionIcon(session)}
+                      
+                      <div className="session-info-group">
+                        <h4 className="session-name-text">{session.session_name}</h4>
+                        <div className="session-time-text">
+                          {session.start_time} – {session.end_time}
+                        </div>
+                        {session.late_time && (
+                          <span className="session-late-pill">
+                            Late after {session.late_time}
                           </span>
                         )}
                       </div>
-                    );
-                  })
-                ) : (
-                  <div>
-                    <span style={{ fontWeight: 600 }}>{schedule.sessionName}:</span>{' '}
-                    {formatTime12(schedule.start) && formatTime12(schedule.end)
-                      ? `${formatTime12(schedule.start)} – ${formatTime12(schedule.end)}`
-                      : (schedule.start && schedule.end && schedule.start !== '00:00' ? `${schedule.start} – ${schedule.end}` : 'Not Scheduled Today')}
+                    </div>
+
+                    {/* Right Action / Status Badge */}
+                    <div className="session-status-container">
+                      {isMarked ? (
+                        <span className="status-pill-badge marked">
+                          <CheckCircle size={14} /> Marked
+                        </span>
+                      ) : isLive ? (
+                        <button
+                          className="mark-attendance-btn"
+                          onClick={() => handleOpenMarkModal(session)}
+                        >
+                          <Fingerprint size={16} /> Mark Attendance
+                        </button>
+                      ) : isClosed ? (
+                        <span className="status-pill-badge closed">
+                          Closed
+                        </span>
+                      ) : (
+                        <span className="status-pill-badge upcoming">
+                          Upcoming
+                        </span>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Attendance Card */}
-        <HamsCard padding="2rem" className="attendance-card">
-          {alreadyMarked || success ? (
-            <div className="success-banner">
-              <CheckCircle size={48} color="var(--color-success)" />
-              <h3>Attendance Marked!</h3>
-              <p>Your attendance has been recorded for today.<br/>See you tomorrow!</p>
-            </div>
-          ) : !attendanceActive ? (
-            <div className="closed-attendance-view" style={{ textAlign: 'center', padding: '1rem 0' }}>
-              <div style={{
-                width: 68,
-                height: 68,
-                borderRadius: '50%',
-                border: '3px solid #d97706',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 1.25rem',
-                color: '#d97706'
-              }}>
-                <Clock size={36} />
-              </div>
-              <h3 style={{ fontSize: '1.2rem', fontWeight: 600, color: '#92400e', marginBottom: '0.4rem' }}>
-                Attendance is closed.
-              </h3>
-              <p style={{ color: '#b45309', fontSize: '0.95rem', fontWeight: 600 }}>
-                {allSchedules.length > 0 
-                  ? (allSchedules.length === 1 
-                      ? `Available between ${allSchedules[0].start_time} and ${allSchedules[0].end_time}`
-                      : `Available during scheduled windows (${allSchedules.map(s => `${s.session_name}: ${s.start_time}–${s.end_time}`).join(', ')})`)
-                  : `Available between ${schedule.start || '22:30'} and ${schedule.end || '23:05'}`
-                }
-              </p>
-            </div>
-          ) : (
-            <div className="attendance-action">
-              <RadarAnimation isScanning={isMarking}>
-                <button 
-                  className={`mark-btn ${isMarking ? 'marking' : ''}`}
-                  onClick={handleMarkAttendance}
-                  disabled={isMarking}
-                >
-                  <Fingerprint size={48} />
-                </button>
-              </RadarAnimation>
-              
-              <h3 className="action-title">Mark Attendance</h3>
-              <p className="action-desc">Tap the button below to instantly record your attendance.</p>
-              
-              {error && <div className="error-message" style={{ marginTop: '1rem' }} dangerouslySetInnerHTML={{ __html: error }}></div>}
-            </div>
-          )}
-        </HamsCard>
       </div>
+
+      {/* Mark Attendance Modal */}
+      {markingSession && (
+        <div className="modal-overlay">
+          <div className="modal-content-box">
+            <button 
+              className="modal-close-btn"
+              onClick={() => {
+                if (!isMarking) {
+                  setMarkingSession(null);
+                  setMarkError('');
+                  setMarkSuccess('');
+                }
+              }}
+            >
+              <X size={18} />
+            </button>
+
+            <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', margin: '0 0 4px 0' }}>
+              {markingSession.session_name} Attendance
+            </h3>
+            <p style={{ fontSize: '0.88rem', color: '#64748b', margin: '0 0 1.5rem 0' }}>
+              {markingSession.start_time} – {markingSession.end_time}
+            </p>
+
+            {markSuccess ? (
+              <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+                <div style={{
+                  width: '68px',
+                  height: '68px',
+                  borderRadius: '50%',
+                  background: '#ecfdf5',
+                  color: '#10b981',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  margin: '0 auto 1rem auto'
+                }}>
+                  <CheckCircle size={40} />
+                </div>
+                <h4 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#065f46', margin: '0 0 4px 0' }}>
+                  Attendance Verified!
+                </h4>
+                <p style={{ fontSize: '0.9rem', color: '#047857', margin: 0 }}>
+                  {markSuccess}
+                </p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+                <RadarAnimation isScanning={isMarking}>
+                  <button
+                    onClick={() => handleTriggerMarkAttendance(markingSession)}
+                    disabled={isMarking}
+                    style={{
+                      width: '100px',
+                      height: '100px',
+                      borderRadius: '50%',
+                      background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
+                      color: '#ffffff',
+                      border: 'none',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      cursor: isMarking ? 'wait' : 'pointer',
+                      boxShadow: '0 10px 25px -5px rgba(37, 99, 235, 0.5)',
+                      transition: 'all 0.2s ease',
+                      zIndex: 20
+                    }}
+                  >
+                    <Fingerprint size={48} />
+                  </button>
+                </RadarAnimation>
+
+                <div style={{ marginTop: '1.25rem', textAlign: 'center' }}>
+                  <div style={{ fontSize: '1rem', fontWeight: 700, color: '#1e293b' }}>
+                    {isMarking ? 'Scanning for Classroom ESP32...' : 'Tap to Mark Attendance'}
+                  </div>
+                  <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '4px' }}>
+                    Ensure Bluetooth is enabled on your device.
+                  </div>
+                </div>
+
+                {markError && (
+                  <div style={{
+                    marginTop: '1.25rem',
+                    padding: '0.75rem 1rem',
+                    backgroundColor: '#fef2f2',
+                    border: '1px solid #fee2e2',
+                    borderRadius: '12px',
+                    color: '#b91c1c',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    width: '100%',
+                    textAlign: 'center'
+                  }}>
+                    {markError}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Unauthorized Device / Browser Modal */}
       {unauthorizedModal.show && createPortal(
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(15, 23, 42, 0.75)',
-          backdropFilter: 'blur(8px)',
-          zIndex: 99999,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          padding: '1.25rem',
-          animation: 'fadeIn 0.2s ease-out'
-        }}>
-          <div style={{
-            backgroundColor: '#ffffff',
-            borderRadius: '24px',
-            maxWidth: '420px',
-            width: '100%',
-            padding: '2rem',
-            textAlign: 'center',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)',
-            border: '1px solid #fee2e2'
-          }}>
+        <div className="modal-overlay">
+          <div className="modal-content-box" style={{ maxWidth: '400px' }}>
             <div style={{
-              width: '68px',
-              height: '68px',
+              width: '64px',
+              height: '64px',
               borderRadius: '50%',
               backgroundColor: '#fee2e2',
               color: '#dc2626',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              margin: '0 auto 1.25rem'
+              margin: '0 auto 1.25rem auto'
             }}>
-              <AlertTriangle size={36} />
+              <AlertTriangle size={32} />
             </div>
 
-            <h2 style={{ fontSize: '1.35rem', fontWeight: 800, color: '#991b1b', marginBottom: '0.6rem' }}>
+            <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#991b1b', marginBottom: '0.5rem' }}>
               Access Unauthorized
             </h2>
 
-            <p style={{ color: '#475569', fontSize: '0.95rem', lineHeight: 1.5, marginBottom: '1.25rem' }}>
+            <p style={{ color: '#475569', fontSize: '0.92rem', lineHeight: 1.5, marginBottom: '1.25rem' }}>
               {unauthorizedModal.message || 'You are not authorized. Please login again.'}
             </p>
 
@@ -376,17 +540,21 @@ export const StudentDashboard: React.FC = () => {
               backgroundColor: '#fef2f2',
               borderRadius: '12px',
               padding: '0.75rem',
-              marginBottom: '1.5rem',
+              marginBottom: '1.25rem',
               border: '1px solid #fecaca',
               fontSize: '0.85rem',
               color: '#b91c1c',
-              fontWeight: 600
+              fontWeight: 600,
+              width: '100%'
             }}>
-              Auto-refreshing & logging out in <span style={{ fontWeight: 800, fontSize: '1.05rem' }}>{unauthorizedModal.countdown}s</span>...
+              Auto-logging out in <span style={{ fontWeight: 800, fontSize: '1.05rem' }}>{unauthorizedModal.countdown}s</span>...
             </div>
 
             <button
-              onClick={handleForceLogout}
+              onClick={() => {
+                logout();
+                window.location.href = '/login';
+              }}
               style={{
                 width: '100%',
                 padding: '0.85rem',
@@ -406,6 +574,9 @@ export const StudentDashboard: React.FC = () => {
         </div>,
         document.body
       )}
+
     </div>
   );
 };
+
+export default StudentDashboard;
