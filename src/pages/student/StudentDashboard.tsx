@@ -30,8 +30,8 @@ export const StudentDashboard: React.FC = () => {
 
   useEffect(() => {
     fetchStatus();
-    // Auto-poll status every 30 seconds to catch when a window opens
-    const interval = setInterval(fetchStatus, 30000);
+    // Auto-poll status every 10 seconds to catch immediately when a window opens
+    const interval = setInterval(fetchStatus, 10000);
     return () => clearInterval(interval);
   }, []);
 
