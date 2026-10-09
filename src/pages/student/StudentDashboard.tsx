@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   Users, 
@@ -13,8 +13,11 @@ import {
   AlertTriangle, 
   X,
   Calendar,
-  Layers,
-  DoorClosed
+  Clock,
+  Radio,
+  Building,
+  DoorClosed,
+  ChevronRight
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import apiClient from '../../services/apiClient';
@@ -57,6 +60,7 @@ export const StudentDashboard: React.FC = () => {
   const [isMarking, setIsMarking] = useState(false);
   const [markError, setMarkError] = useState('');
   const [markSuccess, setMarkSuccess] = useState('');
+  const [currentTime, setCurrentTime] = useState<Date>(new Date());
 
   const [unauthorizedModal, setUnauthorizedModal] = useState<{
     show: boolean;
@@ -67,6 +71,14 @@ export const StudentDashboard: React.FC = () => {
     message: '',
     countdown: 3
   });
+
+  // Live ticking clock
+  useEffect(() => {
+    const clockTimer = setInterval(() => {
+      setCurrentTime(new Date());
+    }, 1000);
+    return () => clearInterval(clockTimer);
+  }, []);
 
   useEffect(() => {
     fetchStatus();
@@ -185,10 +197,9 @@ export const StudentDashboard: React.FC = () => {
   };
 
   // Format today's date banner string (e.g. "FRIDAY, 9 OCTOBER")
-  const getTodayDateHeader = () => {
+  const formattedDate = useMemo(() => {
     try {
-      const now = new Date();
-      return now.toLocaleDateString('en-US', {
+      return currentTime.toLocaleDateString('en-US', {
         weekday: 'long',
         day: 'numeric',
         month: 'long',
@@ -197,7 +208,21 @@ export const StudentDashboard: React.FC = () => {
     } catch (e) {
       return 'TODAY';
     }
-  };
+  }, [currentTime]);
+
+  const formattedTime = useMemo(() => {
+    try {
+      return currentTime.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: true,
+        timeZone: 'Asia/Kolkata'
+      });
+    } catch (e) {
+      return '';
+    }
+  }, [currentTime]);
 
   // Initials generator (e.g. Harshil Patel -> HP)
   const getInitials = (name?: string) => {
@@ -231,6 +256,10 @@ export const StudentDashboard: React.FC = () => {
     );
   };
 
+  const activeLiveSession = useMemo(() => {
+    return schedules.find(s => s.status === 'live');
+  }, [schedules]);
+
   const displayName = studentProfile?.name || user?.name || 'Student';
   const displayId = studentProfile?.student_code || studentProfile?.id || '';
   const displayRoom = studentProfile?.room || user?.room || '913';
@@ -239,36 +268,63 @@ export const StudentDashboard: React.FC = () => {
 
   return (
     <div className="student-dashboard-root">
+      
+      {/* Ambient background glow layers for laptop & mobile */}
+      <div className="ambient-glow glow-top-left"></div>
+      <div className="ambient-glow glow-top-right"></div>
+      
       <div className="student-dashboard-container">
         
         {/* Top Header */}
         <header className="student-header">
-          <div>
+          <div className="student-header-left">
             <div className="student-date-badge">
-              <Calendar size={14} />
-              <span>{getTodayDateHeader()}</span>
+              <Calendar size={13} className="date-badge-icon" />
+              <span>{formattedDate}</span>
+              <span className="live-clock-pill">
+                <Clock size={11} /> {formattedTime}
+              </span>
             </div>
             <h1 className="student-header-title">Attendance</h1>
-            <p className="student-header-subtitle">Daily routine & verification</p>
+            <p className="student-header-subtitle">Daily verification & routine schedule</p>
           </div>
           
           <div className="student-header-actions">
             <button 
-              className="student-icon-btn" 
+              className={`student-icon-btn ${isRefreshing ? 'is-loading' : ''}`}
               onClick={fetchStatus} 
               title="Refresh Schedule"
             >
-              <RotateCw size={18} className={isRefreshing ? 'animate-spin' : ''} />
+              <RotateCw size={17} className={isRefreshing ? 'spin-animation' : ''} />
             </button>
             <button 
-              className="student-icon-btn" 
+              className="student-icon-btn logout-btn" 
               onClick={logout} 
               title="Logout"
             >
-              <LogOut size={18} />
+              <LogOut size={17} />
             </button>
           </div>
         </header>
+
+        {/* Live Active Banner if a session is currently open */}
+        {activeLiveSession && (
+          <div className="active-session-banner">
+            <div className="active-banner-left">
+              <span className="live-pulse-dot"></span>
+              <div>
+                <div className="active-banner-label">SESSION LIVE NOW</div>
+                <div className="active-banner-title">{activeLiveSession.session_name} ({activeLiveSession.start_time} - {activeLiveSession.end_time})</div>
+              </div>
+            </div>
+            <button 
+              className="active-banner-cta"
+              onClick={() => handleOpenMarkModal(activeLiveSession)}
+            >
+              <Fingerprint size={16} /> Mark Now
+            </button>
+          </div>
+        )}
 
         {/* Student Profile Card */}
         <div className="student-profile-card">
@@ -278,12 +334,18 @@ export const StudentDashboard: React.FC = () => {
             </div>
             
             <div className="profile-main-info">
-              <h2 className="profile-student-name">{displayName}</h2>
+              <div className="profile-name-row">
+                <h2 className="profile-student-name">{displayName}</h2>
+                <div className="verified-pill">
+                  <CheckCircle size={13} />
+                  <span>Verified</span>
+                </div>
+              </div>
               
               <div className="profile-badges-row">
                 {displayId && (
                   <span className="pill-badge id-badge">
-                    🪪 {displayId}
+                    🪪 ID: {displayId}
                   </span>
                 )}
                 <span className="pill-badge room-badge">
@@ -310,19 +372,19 @@ export const StudentDashboard: React.FC = () => {
 
           <div className="profile-bottom-row">
             <div className="profile-phone-info">
-              <Phone size={14} color="#64748b" />
+              <Phone size={13} color="#64748b" />
               <span>{displayPhone}</span>
             </div>
 
-            <div className="verified-pill">
-              <CheckCircle size={14} />
-              <span>Verified</span>
+            <div className="profile-status-indicator">
+              <span className="device-status-dot"></span>
+              <span>BLE Scanner Active</span>
             </div>
           </div>
         </div>
 
         {/* Today's Schedule Section */}
-        <div>
+        <div className="schedule-section-wrapper">
           <div className="schedule-section-header">
             <div className="schedule-title-group">
               <div className="schedule-accent-bar"></div>
@@ -334,74 +396,84 @@ export const StudentDashboard: React.FC = () => {
           </div>
 
           <div className="schedule-timeline-container">
-            {schedules.map((session, idx) => {
-              const isLive = session.status === 'live';
-              const isMarked = session.status === 'marked';
-              const isClosed = session.status === 'closed';
-              const isUpcoming = session.status === 'upcoming';
+            {schedules.length === 0 ? (
+              <div className="no-schedules-card">
+                <Radio size={32} className="no-schedules-icon" />
+                <p className="no-schedules-title">No Active Sessions Scheduled</p>
+                <p className="no-schedules-subtitle">Sessions for today will appear here as soon as scheduled by supervisor.</p>
+              </div>
+            ) : (
+              schedules.map((session) => {
+                const isLive = session.status === 'live';
+                const isMarked = session.status === 'marked';
+                const isClosed = session.status === 'closed';
+                const isUpcoming = session.status === 'upcoming';
 
-              let cardClass = 'session-card';
-              if (isLive) cardClass += ' live-card';
-              else if (isMarked) cardClass += ' marked-card';
-              else if (isClosed) cardClass += ' closed-card';
+                let cardClass = 'session-card';
+                if (isLive) cardClass += ' live-card';
+                else if (isMarked) cardClass += ' marked-card';
+                else if (isClosed) cardClass += ' closed-card';
 
-              return (
-                <div key={session.session_key} className="schedule-timeline-row">
-                  {/* Left Start Time */}
-                  <div className="timeline-time-col">
-                    {session.start_time || '21:00'}
-                  </div>
+                return (
+                  <div key={session.session_key} className="schedule-timeline-row">
+                    {/* Left Start Time */}
+                    <div className="timeline-time-col">
+                      <span className="time-primary">{session.start_time || '21:00'}</span>
+                      <span className="time-secondary">{session.end_time || '21:30'}</span>
+                    </div>
 
-                  {/* Timeline Dot */}
-                  <div className="timeline-dot-wrapper">
-                    <div className={`timeline-dot ${session.status}`}></div>
-                  </div>
+                    {/* Timeline Connector & Dot */}
+                    <div className="timeline-dot-wrapper">
+                      <div className="timeline-line"></div>
+                      <div className={`timeline-dot ${session.status}`}></div>
+                    </div>
 
-                  {/* Session Card */}
-                  <div className={cardClass}>
-                    <div className="session-left-group">
-                      {getSessionIcon(session)}
-                      
-                      <div className="session-info-group">
-                        <h4 className="session-name-text">{session.session_name}</h4>
-                        <div className="session-time-text">
-                          {session.start_time} – {session.end_time}
+                    {/* Session Card */}
+                    <div className={cardClass}>
+                      <div className="session-left-group">
+                        {getSessionIcon(session)}
+                        
+                        <div className="session-info-group">
+                          <h4 className="session-name-text">{session.session_name}</h4>
+                          <div className="session-time-text">
+                            {session.start_time} – {session.end_time}
+                          </div>
+                          {session.late_time && (
+                            <span className="session-late-pill">
+                              Late after {session.late_time}
+                            </span>
+                          )}
                         </div>
-                        {session.late_time && (
-                          <span className="session-late-pill">
-                            Late after {session.late_time}
+                      </div>
+
+                      {/* Right Action / Status Badge */}
+                      <div className="session-status-container">
+                        {isMarked ? (
+                          <span className="status-pill-badge marked">
+                            <CheckCircle size={14} /> Marked
+                          </span>
+                        ) : isLive ? (
+                          <button
+                            className="mark-attendance-btn"
+                            onClick={() => handleOpenMarkModal(session)}
+                          >
+                            <Fingerprint size={16} /> Mark Attendance
+                          </button>
+                        ) : isClosed ? (
+                          <span className="status-pill-badge closed">
+                            Closed
+                          </span>
+                        ) : (
+                          <span className="status-pill-badge upcoming">
+                            Upcoming
                           </span>
                         )}
                       </div>
                     </div>
-
-                    {/* Right Action / Status Badge */}
-                    <div className="session-status-container">
-                      {isMarked ? (
-                        <span className="status-pill-badge marked">
-                          <CheckCircle size={14} /> Marked
-                        </span>
-                      ) : isLive ? (
-                        <button
-                          className="mark-attendance-btn"
-                          onClick={() => handleOpenMarkModal(session)}
-                        >
-                          <Fingerprint size={16} /> Mark Attendance
-                        </button>
-                      ) : isClosed ? (
-                        <span className="status-pill-badge closed">
-                          Closed
-                        </span>
-                      ) : (
-                        <span className="status-pill-badge upcoming">
-                          Upcoming
-                        </span>
-                      )}
-                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })
+            )}
           </div>
         </div>
 
@@ -424,84 +496,54 @@ export const StudentDashboard: React.FC = () => {
               <X size={18} />
             </button>
 
-            <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#0f172a', margin: '0 0 4px 0' }}>
+            <div className="modal-header-icon-box">
+              <Fingerprint size={28} />
+            </div>
+
+            <h3 className="modal-title">
               {markingSession.session_name} Attendance
             </h3>
-            <p style={{ fontSize: '0.88rem', color: '#64748b', margin: '0 0 1.5rem 0' }}>
-              {markingSession.start_time} – {markingSession.end_time}
+            <p className="modal-subtitle">
+              Session window: {markingSession.start_time} – {markingSession.end_time}
             </p>
 
             {markSuccess ? (
-              <div style={{ textAlign: 'center', padding: '1rem 0' }}>
-                <div style={{
-                  width: '68px',
-                  height: '68px',
-                  borderRadius: '50%',
-                  background: '#ecfdf5',
-                  color: '#10b981',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  margin: '0 auto 1rem auto'
-                }}>
-                  <CheckCircle size={40} />
+              <div className="modal-success-box">
+                <div className="modal-success-icon-wrap">
+                  <CheckCircle size={44} />
                 </div>
-                <h4 style={{ fontSize: '1.15rem', fontWeight: 800, color: '#065f46', margin: '0 0 4px 0' }}>
+                <h4 className="modal-success-title">
                   Attendance Verified!
                 </h4>
-                <p style={{ fontSize: '0.9rem', color: '#047857', margin: 0 }}>
+                <p className="modal-success-msg">
                   {markSuccess}
                 </p>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%' }}>
+              <div className="modal-radar-wrapper">
                 <RadarAnimation isScanning={isMarking}>
                   <button
                     onClick={() => handleTriggerMarkAttendance(markingSession)}
                     disabled={isMarking}
-                    style={{
-                      width: '100px',
-                      height: '100px',
-                      borderRadius: '50%',
-                      background: 'linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)',
-                      color: '#ffffff',
-                      border: 'none',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      cursor: isMarking ? 'wait' : 'pointer',
-                      boxShadow: '0 10px 25px -5px rgba(37, 99, 235, 0.5)',
-                      transition: 'all 0.2s ease',
-                      zIndex: 20
-                    }}
+                    className="modal-fingerprint-btn"
                   >
                     <Fingerprint size={48} />
                   </button>
                 </RadarAnimation>
 
-                <div style={{ marginTop: '1.25rem', textAlign: 'center' }}>
-                  <div style={{ fontSize: '1rem', fontWeight: 700, color: '#1e293b' }}>
+                <div className="modal-scan-text-wrap">
+                  <div className="modal-scan-status">
                     {isMarking ? 'Scanning for Classroom ESP32...' : 'Tap to Mark Attendance'}
                   </div>
-                  <div style={{ fontSize: '0.82rem', color: '#64748b', marginTop: '4px' }}>
-                    Ensure Bluetooth is enabled on your device.
+                  <div className="modal-scan-hint">
+                    Ensure Bluetooth & Location are enabled on your device.
                   </div>
                 </div>
 
                 {markError && (
-                  <div style={{
-                    marginTop: '1.25rem',
-                    padding: '0.75rem 1rem',
-                    backgroundColor: '#fef2f2',
-                    border: '1px solid #fee2e2',
-                    borderRadius: '12px',
-                    color: '#b91c1c',
-                    fontSize: '0.85rem',
-                    fontWeight: 600,
-                    width: '100%',
-                    textAlign: 'center'
-                  }}>
-                    {markError}
+                  <div className="modal-error-badge">
+                    <AlertTriangle size={15} />
+                    <span>{markError}</span>
                   </div>
                 )}
               </div>
@@ -513,41 +555,21 @@ export const StudentDashboard: React.FC = () => {
       {/* Unauthorized Device / Browser Modal */}
       {unauthorizedModal.show && createPortal(
         <div className="modal-overlay">
-          <div className="modal-content-box" style={{ maxWidth: '400px' }}>
-            <div style={{
-              width: '64px',
-              height: '64px',
-              borderRadius: '50%',
-              backgroundColor: '#fee2e2',
-              color: '#dc2626',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 1.25rem auto'
-            }}>
-              <AlertTriangle size={32} />
+          <div className="modal-content-box unauthorized-box">
+            <div className="unauthorized-icon-wrap">
+              <AlertTriangle size={34} />
             </div>
 
-            <h2 style={{ fontSize: '1.3rem', fontWeight: 800, color: '#991b1b', marginBottom: '0.5rem' }}>
+            <h2 className="unauthorized-title">
               Access Unauthorized
             </h2>
 
-            <p style={{ color: '#475569', fontSize: '0.92rem', lineHeight: 1.5, marginBottom: '1.25rem' }}>
+            <p className="unauthorized-desc">
               {unauthorizedModal.message || 'You are not authorized. Please login again.'}
             </p>
 
-            <div style={{
-              backgroundColor: '#fef2f2',
-              borderRadius: '12px',
-              padding: '0.75rem',
-              marginBottom: '1.25rem',
-              border: '1px solid #fecaca',
-              fontSize: '0.85rem',
-              color: '#b91c1c',
-              fontWeight: 600,
-              width: '100%'
-            }}>
-              Auto-logging out in <span style={{ fontWeight: 800, fontSize: '1.05rem' }}>{unauthorizedModal.countdown}s</span>...
+            <div className="unauthorized-countdown">
+              Auto-logging out in <span className="countdown-bold">{unauthorizedModal.countdown}s</span>...
             </div>
 
             <button
@@ -555,18 +577,7 @@ export const StudentDashboard: React.FC = () => {
                 logout();
                 window.location.href = '/login';
               }}
-              style={{
-                width: '100%',
-                padding: '0.85rem',
-                borderRadius: '12px',
-                backgroundColor: '#dc2626',
-                color: '#ffffff',
-                fontWeight: 700,
-                fontSize: '0.95rem',
-                border: 'none',
-                cursor: 'pointer',
-                boxShadow: '0 4px 14px rgba(220, 38, 38, 0.35)'
-              }}
+              className="unauthorized-relogin-btn"
             >
               Re-login Now
             </button>
