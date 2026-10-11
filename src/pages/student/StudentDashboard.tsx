@@ -96,6 +96,7 @@ export const StudentDashboard: React.FC = () => {
   const [isMarking, setIsMarking] = useState(false);
   const [markError, setMarkError] = useState('');
   const [markSuccess, setMarkSuccess] = useState('');
+  const [locallyMarkedSessions, setLocallyMarkedSessions] = useState<Set<string>>(new Set());
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   
   // Track auto-popup so it triggers once per dashboard visit for unsubmitted forms
@@ -167,6 +168,12 @@ export const StudentDashboard: React.FC = () => {
             if (s.start_time === '00:00' && s.end_time === '00:00') return false;
             if (s.start_time === s.end_time) return false;
             return true;
+          }).map((s: ScheduleItem) => {
+            const isAlreadyMarked = s.status === 'marked' || s.is_marked || locallyMarkedSessions.has(s.session_key);
+            if (isAlreadyMarked) {
+              return { ...s, is_marked: true, status: 'marked' as const };
+            }
+            return s;
           });
           setSchedules(validSchedules);
         }
@@ -301,6 +308,9 @@ export const StudentDashboard: React.FC = () => {
   };
 
   const handleTriggerMarkAttendance = async (session: ScheduleItem) => {
+    if (session.status === 'marked' || session.is_marked || locallyMarkedSessions.has(session.session_key)) {
+      return;
+    }
     setIsMarking(true);
     setMarkError('');
     setMarkSuccess('');
@@ -321,6 +331,7 @@ export const StudentDashboard: React.FC = () => {
       });
 
       if (res.data.success) {
+        setLocallyMarkedSessions(prev => new Set(prev).add(session.session_key));
         setMarkSuccess(`Attendance recorded for ${session.session_name}!`);
         // Update local session status immediately
         setSchedules(prev => prev.map(s => {
@@ -337,6 +348,16 @@ export const StudentDashboard: React.FC = () => {
         throw new Error(res.data.message || 'Failed to mark attendance.');
       }
     } catch (err: any) {
+      if (err.response?.data?.alreadyMarked || err.response?.data?.message?.toLowerCase().includes('already marked')) {
+        setLocallyMarkedSessions(prev => new Set(prev).add(session.session_key));
+        setSchedules(prev => prev.map(s => s.session_key === session.session_key ? { ...s, status: 'marked', is_marked: true } : s));
+        setMarkSuccess('Attendance already marked for today!');
+        setTimeout(() => {
+          setMarkingSession(null);
+          setMarkSuccess('');
+        }, 1800);
+        return;
+      }
       const respData = err.response?.data;
       if (
         err.response?.status === 403 && 
@@ -431,7 +452,7 @@ export const StudentDashboard: React.FC = () => {
   };
 
   const activeLiveSession = useMemo(() => {
-    return schedules.find(s => s.status === 'live');
+    return schedules.find(s => s.status === 'live' || (s.is_open_now && (s.status === 'marked' || s.is_marked)));
   }, [schedules]);
 
   const displayName = studentProfile?.name || user?.name || 'Student';
@@ -532,23 +553,38 @@ export const StudentDashboard: React.FC = () => {
         )}
 
         {/* Live Active Banner if a session is currently open */}
-        {activeLiveSession && (
-          <div className="active-session-banner">
-            <div className="active-banner-left">
-              <span className="live-pulse-dot"></span>
-              <div>
-                <div className="active-banner-label">SESSION LIVE NOW</div>
-                <div className="active-banner-title">{activeLiveSession.session_name} ({formatTo12Hour(activeLiveSession.start_time)} - {formatTo12Hour(activeLiveSession.end_time)})</div>
+        {activeLiveSession && (() => {
+          const isSessionMarked = activeLiveSession.status === 'marked' || activeLiveSession.is_marked || locallyMarkedSessions.has(activeLiveSession.session_key);
+          return (
+            <div className={`active-session-banner ${isSessionMarked ? 'banner-marked' : ''}`}>
+              <div className="active-banner-left">
+                <span className={isSessionMarked ? "marked-check-dot" : "live-pulse-dot"}>
+                  {isSessionMarked ? <Check size={13} strokeWidth={3} /> : null}
+                </span>
+                <div>
+                  <div className="active-banner-label">
+                    {isSessionMarked ? 'ATTENDANCE CONFIRMED' : 'SESSION LIVE NOW'}
+                  </div>
+                  <div className="active-banner-title">
+                    {activeLiveSession.session_name} ({formatTo12Hour(activeLiveSession.start_time)} - {formatTo12Hour(activeLiveSession.end_time)})
+                  </div>
+                </div>
               </div>
+              {isSessionMarked ? (
+                <div className="active-banner-marked-badge">
+                  <CheckCircle size={15} /> Marked Attendance
+                </div>
+              ) : (
+                <button 
+                  className="active-banner-cta"
+                  onClick={() => handleOpenMarkModal(activeLiveSession)}
+                >
+                  <Fingerprint size={16} /> Mark Now
+                </button>
+              )}
             </div>
-            <button 
-              className="active-banner-cta"
-              onClick={() => handleOpenMarkModal(activeLiveSession)}
-            >
-              <Fingerprint size={16} /> Mark Now
-            </button>
-          </div>
-        )}
+          );
+        })()}
 
         {/* Student Profile Card */}
         <div className="student-profile-card">
@@ -674,10 +710,10 @@ export const StudentDashboard: React.FC = () => {
               </div>
             ) : (
               schedules.map((session) => {
-                const isLive = session.status === 'live';
-                const isMarked = session.status === 'marked';
-                const isClosed = session.status === 'closed';
-                const isUpcoming = session.status === 'upcoming';
+                const isMarked = session.status === 'marked' || session.is_marked || locallyMarkedSessions.has(session.session_key);
+                const isLive = session.status === 'live' && !isMarked;
+                const isClosed = session.status === 'closed' && !isMarked;
+                const isUpcoming = session.status === 'upcoming' && !isMarked;
 
                 let cardClass = 'session-card';
                 if (isLive) cardClass += ' live-card';
@@ -695,7 +731,7 @@ export const StudentDashboard: React.FC = () => {
                     {/* Timeline Connector & Dot */}
                     <div className="timeline-dot-wrapper">
                       <div className="timeline-line"></div>
-                      <div className={`timeline-dot ${session.status}`}></div>
+                      <div className={`timeline-dot ${isMarked ? 'marked' : session.status}`}></div>
                     </div>
 
                     {/* Session Card */}
@@ -719,9 +755,9 @@ export const StudentDashboard: React.FC = () => {
                       {/* Right Action / Status Badge */}
                       <div className="session-status-container">
                         {isMarked ? (
-                          <span className="status-pill-badge marked">
-                            <CheckCircle size={14} /> Marked
-                          </span>
+                          <div className="marked-attendance-btn" title="Attendance already recorded for this session">
+                            <CheckCircle size={15} /> Marked Attendance
+                          </div>
                         ) : isLive ? (
                           <button
                             className="mark-attendance-btn"
@@ -957,77 +993,98 @@ export const StudentDashboard: React.FC = () => {
       )}
 
       {/* Mark Attendance Modal */}
-      {markingSession && (
-        <div className="modal-overlay">
-          <div className="modal-content-box">
-            <button 
-              className="modal-close-btn"
-              onClick={() => {
-                if (!isMarking) {
-                  setMarkingSession(null);
-                  setMarkError('');
-                  setMarkSuccess('');
-                }
-              }}
-            >
-              <X size={18} />
-            </button>
+      {markingSession && (() => {
+        const isSessionAlreadyMarked = markingSession.status === 'marked' || markingSession.is_marked || locallyMarkedSessions.has(markingSession.session_key);
+        return (
+          <div className="modal-overlay" onClick={() => !isMarking && setMarkingSession(null)}>
+            <div className="modal-content-box" onClick={(e) => e.stopPropagation()}>
+              <button 
+                className="modal-close-btn"
+                onClick={() => {
+                  if (!isMarking) {
+                    setMarkingSession(null);
+                    setMarkError('');
+                    setMarkSuccess('');
+                  }
+                }}
+              >
+                <X size={18} />
+              </button>
 
-            <div className="modal-header-icon-box">
-              <Fingerprint size={28} />
-            </div>
-
-            <h3 className="modal-title">
-              {markingSession.session_name} Attendance
-            </h3>
-            <p className="modal-subtitle">
-              Session window: {formatTo12Hour(markingSession.start_time)} – {formatTo12Hour(markingSession.end_time)}
-            </p>
-
-            {markSuccess ? (
-              <div className="modal-success-box">
-                <div className="modal-success-icon-wrap">
-                  <CheckCircle size={44} />
-                </div>
-                <h4 className="modal-success-title">
-                  Attendance Verified!
-                </h4>
-                <p className="modal-success-msg">
-                  {markSuccess}
-                </p>
+              <div className="modal-header-icon-box">
+                {isSessionAlreadyMarked ? <CheckCircle size={28} color="#10b981" /> : <Fingerprint size={28} />}
               </div>
-            ) : (
-              <div className="modal-radar-wrapper">
-                <RadarAnimation isScanning={isMarking}>
+
+              <h3 className="modal-title">
+                {markingSession.session_name} Attendance
+              </h3>
+              <p className="modal-subtitle">
+                Session window: {formatTo12Hour(markingSession.start_time)} – {formatTo12Hour(markingSession.end_time)}
+              </p>
+
+              {markSuccess ? (
+                <div className="modal-success-box">
+                  <div className="modal-success-icon-wrap">
+                    <CheckCircle size={44} />
+                  </div>
+                  <h4 className="modal-success-title">
+                    Attendance Verified!
+                  </h4>
+                  <p className="modal-success-msg">
+                    {markSuccess}
+                  </p>
+                </div>
+              ) : isSessionAlreadyMarked ? (
+                <div className="modal-success-box">
+                  <div className="modal-success-icon-wrap" style={{ background: '#ecfdf5', color: '#059669' }}>
+                    <CheckCircle size={44} />
+                  </div>
+                  <h4 className="modal-success-title" style={{ color: '#065f46' }}>
+                    Attendance Already Marked
+                  </h4>
+                  <p className="modal-success-msg" style={{ color: '#047857' }}>
+                    Your attendance for {markingSession.session_name} is already confirmed and recorded in the database.
+                  </p>
                   <button
-                    onClick={() => handleTriggerMarkAttendance(markingSession)}
-                    disabled={isMarking}
-                    className="modal-fingerprint-btn"
+                    className="mark-already-done-close-btn"
+                    onClick={() => setMarkingSession(null)}
                   >
-                    <Fingerprint size={48} />
+                    Done
                   </button>
-                </RadarAnimation>
-
-                <div className="modal-scan-text-wrap">
-                  <div className="modal-scan-status">
-                    {isMarking ? 'Scanning for Classroom ESP32...' : 'Tap to Mark Attendance'}
-                  </div>
-                  <div className="modal-scan-hint">
-                    Ensure Bluetooth & Location are enabled on your device.
-                  </div>
                 </div>
+              ) : (
+                <div className="modal-radar-wrapper">
+                  <RadarAnimation isScanning={isMarking}>
+                    <button
+                      onClick={() => handleTriggerMarkAttendance(markingSession)}
+                      disabled={isMarking}
+                      className="modal-fingerprint-btn"
+                    >
+                      <Fingerprint size={48} />
+                    </button>
+                  </RadarAnimation>
 
-                {markError && (
-                  <div className="modal-error-badge">
-                    <AlertTriangle size={15} />
-                    <span>{markError}</span>
+                  <div className="modal-scan-text-wrap">
+                    <div className="modal-scan-status">
+                      {isMarking ? 'Scanning for Classroom ESP32...' : 'Tap to Mark Attendance'}
+                    </div>
+                    <div className="modal-scan-hint">
+                      Ensure Bluetooth & Location are enabled on your device.
+                    </div>
                   </div>
-                )}
-              </div>
-            )}
+
+                  {markError && (
+                    <div className="modal-error-badge">
+                      <AlertTriangle size={15} />
+                      <span>{markError}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Unauthorized Device / Browser Modal */}
       {unauthorizedModal.show && createPortal(
