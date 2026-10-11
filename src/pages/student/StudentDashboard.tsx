@@ -755,9 +755,9 @@ export const StudentDashboard: React.FC = () => {
                       {/* Right Action / Status Badge */}
                       <div className="session-status-container">
                         {isMarked ? (
-                          <div className="marked-attendance-btn" title="Attendance already recorded for this session">
-                            <CheckCircle size={15} /> Marked Attendance
-                          </div>
+                          <span className="status-pill-badge marked" title="Your attendance is already recorded">
+                            <CheckCircle size={14} /> Attendance Marked
+                          </span>
                         ) : isLive ? (
                           <button
                             className="mark-attendance-btn"
