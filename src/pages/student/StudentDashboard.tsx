@@ -13,6 +13,7 @@ import {
   AlertTriangle, 
   X,
   Calendar,
+  CalendarCheck,
   Clock,
   Radio,
   Building,
@@ -49,9 +50,12 @@ interface ScheduleItem {
   start_time: string;
   end_time: string;
   late_time?: string | null;
-  status: 'marked' | 'live' | 'closed' | 'upcoming';
+  status: 'marked' | 'live' | 'closed' | 'upcoming' | 'leave';
   is_marked?: boolean;
   is_present?: boolean;
+  is_absent?: boolean;
+  is_on_leave?: boolean;
+  leave_info?: any;
   is_live?: boolean;
   can_mark?: boolean;
   show_mark_button?: boolean;
@@ -209,17 +213,36 @@ export const StudentDashboard: React.FC = () => {
                 ...s, 
                 is_marked: true, 
                 is_present: true, 
+                is_absent: false,
+                is_on_leave: false,
                 can_mark: false, 
                 show_mark_button: false, 
                 status: 'marked' as const 
               };
             }
             unmarkSessionLocally(s.session_key);
+
+            const isOnLeave = Boolean(s.status === 'leave' || s.is_on_leave);
+            if (isOnLeave) {
+              return {
+                ...s,
+                is_marked: false,
+                is_present: false,
+                is_absent: false,
+                is_on_leave: true,
+                can_mark: false,
+                show_mark_button: false,
+                status: 'leave' as const
+              };
+            }
+
             const isLive = s.status === 'live' || s.is_live || s.is_open_now;
             return {
               ...s,
               is_marked: false,
               is_present: false,
+              is_absent: true,
+              is_on_leave: false,
               can_mark: Boolean(isLive),
               show_mark_button: Boolean(isLive),
               status: isLive ? ('live' as const) : s.status
@@ -605,15 +628,16 @@ export const StudentDashboard: React.FC = () => {
         {/* Live Active Banner if a session is currently open */}
         {activeLiveSession && (() => {
           const isSessionMarked = activeLiveSession.status === 'marked' || activeLiveSession.is_marked || activeLiveSession.is_present || locallyMarkedSessions.has(activeLiveSession.session_key);
+          const isSessionOnLeave = activeLiveSession.status === 'leave' || activeLiveSession.is_on_leave;
           return (
-            <div className={`active-session-banner ${isSessionMarked ? 'banner-marked' : ''}`}>
+            <div className={`active-session-banner ${isSessionMarked ? 'banner-marked' : isSessionOnLeave ? 'banner-leave' : ''}`}>
               <div className="active-banner-left">
-                <span className={isSessionMarked ? "marked-check-dot" : "live-pulse-dot"}>
-                  {isSessionMarked ? <Check size={13} strokeWidth={3} /> : null}
+                <span className={isSessionMarked ? "marked-check-dot" : isSessionOnLeave ? "leave-calendar-dot" : "live-pulse-dot"}>
+                  {isSessionMarked ? <Check size={13} strokeWidth={3} /> : isSessionOnLeave ? <CalendarCheck size={13} strokeWidth={2.5} /> : null}
                 </span>
                 <div>
                   <div className="active-banner-label">
-                    {isSessionMarked ? 'ATTENDANCE CONFIRMED' : 'SESSION LIVE NOW'}
+                    {isSessionMarked ? 'ATTENDANCE CONFIRMED' : isSessionOnLeave ? 'APPROVED LEAVE' : 'SESSION LIVE NOW'}
                   </div>
                   <div className="active-banner-title">
                     {activeLiveSession.session_name} ({formatTo12Hour(activeLiveSession.start_time)} - {formatTo12Hour(activeLiveSession.end_time)})
@@ -623,6 +647,10 @@ export const StudentDashboard: React.FC = () => {
               {isSessionMarked ? (
                 <div className="active-banner-marked-badge">
                   <CheckCircle size={14} strokeWidth={2.5} /> Marked
+                </div>
+              ) : isSessionOnLeave ? (
+                <div className="active-banner-leave-badge">
+                  <CalendarCheck size={14} strokeWidth={2.5} /> On Leave
                 </div>
               ) : (
                 <button 
@@ -761,13 +789,16 @@ export const StudentDashboard: React.FC = () => {
             ) : (
               schedules.map((session) => {
                 const isMarked = session.status === 'marked' || session.is_marked || session.is_present || locallyMarkedSessions.has(session.session_key);
-                const isLive = (session.status === 'live' || session.is_live || session.is_open_now) && !isMarked;
-                const isClosed = session.status === 'closed' && !isMarked && !isLive;
-                const isUpcoming = !isMarked && !isLive && !isClosed;
+                const isOnLeave = (session.status === 'leave' || session.is_on_leave) && !isMarked;
+                const isAbsent = !isMarked && !isOnLeave;
+                const isLive = (session.status === 'live' || session.is_live || session.is_open_now) && isAbsent;
+                const isClosed = session.status === 'closed' && isAbsent && !isLive;
+                const isUpcoming = !isMarked && !isOnLeave && !isLive && !isClosed;
 
                 let cardClass = 'session-card';
                 if (isLive) cardClass += ' live-card';
                 else if (isMarked) cardClass += ' marked-card';
+                else if (isOnLeave) cardClass += ' leave-card';
                 else if (isClosed) cardClass += ' closed-card';
 
                 return (
@@ -781,7 +812,7 @@ export const StudentDashboard: React.FC = () => {
                     {/* Timeline Connector & Dot */}
                     <div className="timeline-dot-wrapper">
                       <div className="timeline-line"></div>
-                      <div className={`timeline-dot ${isMarked ? 'marked' : session.status}`}></div>
+                      <div className={`timeline-dot ${isMarked ? 'marked' : isOnLeave ? 'leave' : session.status}`}></div>
                     </div>
 
                     {/* Session Card */}
@@ -807,6 +838,10 @@ export const StudentDashboard: React.FC = () => {
                         {isMarked ? (
                           <span className="status-pill-badge marked" title="Attendance recorded">
                             <CheckCircle size={13} strokeWidth={2.5} /> Marked
+                          </span>
+                        ) : isOnLeave ? (
+                          <span className="status-pill-badge leave" title="Approved leave for today">
+                            <CalendarCheck size={13} strokeWidth={2.5} /> On Leave
                           </span>
                         ) : isLive ? (
                           <button
