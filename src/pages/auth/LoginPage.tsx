@@ -169,10 +169,11 @@ export const LoginPage: React.FC = () => {
       });
       
       if (response.data.success) {
-        const token = response.data.data.token;
-        const user = response.data.data.user;
+        const token = response.data.data?.token || response.data.token;
+        const user = response.data.data?.user || response.data.user || response.data.data?.student || response.data.student;
         
-        if (user.role !== 'STUDENT' && user.role !== 'LEADER' && user.role !== 'SESSION_VIEWER') {
+        const roleUpper = String(user?.role || '').toUpperCase();
+        if (roleUpper !== 'STUDENT' && roleUpper !== 'LEADER' && roleUpper !== 'SESSION_VIEWER' && roleUpper !== 'ALUMNI') {
           setError('Invalid code');
           setConfirmModal(null);
           return;
@@ -184,10 +185,12 @@ export const LoginPage: React.FC = () => {
         setConfirmModal(null);
 
         login(token, user);
-        if (user.role === 'SESSION_VIEWER') {
+        if (roleUpper === 'SESSION_VIEWER') {
           navigate('/viewer');
-        } else if (user.role === 'LEADER') {
+        } else if (roleUpper === 'LEADER') {
           navigate('/leader');
+        } else if (roleUpper === 'ALUMNI' || user?.is_alumni) {
+          navigate('/alumni');
         } else {
           navigate('/student');
         }

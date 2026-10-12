@@ -621,8 +621,8 @@ export const StudentDashboard: React.FC = () => {
                 </div>
               </div>
               {isSessionMarked ? (
-                <div className="status-pill-badge marked" style={{ padding: '6px 14px', borderRadius: '20px', fontWeight: 700, fontSize: '0.82rem' }}>
-                  <CheckCircle size={14} /> Attendance Marked Successfully
+                <div className="active-banner-marked-badge">
+                  <CheckCircle size={14} strokeWidth={2.5} /> Marked
                 </div>
               ) : (
                 <button 
@@ -806,7 +806,7 @@ export const StudentDashboard: React.FC = () => {
                       <div className="session-status-container">
                         {isMarked ? (
                           <span className="status-pill-badge marked" title="Attendance recorded">
-                            <CheckCircle size={14} /> Attendance Marked Successfully
+                            <CheckCircle size={13} strokeWidth={2.5} /> Marked
                           </span>
                         ) : isLive ? (
                           <button
