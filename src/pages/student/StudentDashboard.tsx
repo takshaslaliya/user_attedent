@@ -100,31 +100,30 @@ export const StudentDashboard: React.FC = () => {
   const [isMarking, setIsMarking] = useState(false);
   const [markError, setMarkError] = useState('');
   const [markSuccess, setMarkSuccess] = useState('');
-  const [locallyMarkedSessions, setLocallyMarkedSessions] = useState<Set<string>>(() => {
-    try {
-      const d = new Date();
-      const storageKey = `hams_marked_${d.getFullYear()}_${d.getMonth() + 1}_${d.getDate()}`;
-      const saved = localStorage.getItem(storageKey);
-      if (saved) {
-        const arr = JSON.parse(saved);
-        return new Set(Array.isArray(arr) ? arr : []);
-      }
-    } catch (e) {}
-    return new Set();
-  });
+  const [locallyMarkedSessions, setLocallyMarkedSessions] = useState<Set<string>>(new Set());
 
   const markSessionLocally = (key: string) => {
     if (!key) return;
+    setLocallyMarkedSessions(prev => new Set(prev).add(key));
+  };
+
+  const unmarkSessionLocally = (key: string) => {
+    if (!key) return;
     setLocallyMarkedSessions(prev => {
-      const next = new Set(prev).add(key);
-      try {
-        const d = new Date();
-        const storageKey = `hams_marked_${d.getFullYear()}_${d.getMonth() + 1}_${d.getDate()}`;
-        localStorage.setItem(storageKey, JSON.stringify(Array.from(next)));
-      } catch (e) {}
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
       return next;
     });
   };
+
+  useEffect(() => {
+    try {
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('hams_marked_')) localStorage.removeItem(k);
+      });
+    } catch (e) {}
+  }, []);
 
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   
@@ -203,8 +202,8 @@ export const StudentDashboard: React.FC = () => {
             if (s.start_time === s.end_time) return false;
             return true;
           }).map((s: ScheduleItem) => {
-            const isAlreadyMarked = s.status === 'marked' || s.is_marked || s.is_present || (payload.already_marked && (s.session_key === payload.active_session_type || s.is_open_now || s.is_live)) || locallyMarkedSessions.has(s.session_key);
-            if (isAlreadyMarked) {
+            const isServerMarked = s.status === 'marked' || s.is_marked || s.is_present;
+            if (isServerMarked) {
               markSessionLocally(s.session_key);
               return { 
                 ...s, 
@@ -215,6 +214,7 @@ export const StudentDashboard: React.FC = () => {
                 status: 'marked' as const 
               };
             }
+            unmarkSessionLocally(s.session_key);
             const isLive = s.status === 'live' || s.is_live || s.is_open_now;
             return {
               ...s,
