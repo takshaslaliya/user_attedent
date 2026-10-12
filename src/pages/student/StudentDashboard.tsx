@@ -169,7 +169,7 @@ export const StudentDashboard: React.FC = () => {
             if (s.start_time === s.end_time) return false;
             return true;
           }).map((s: ScheduleItem) => {
-            const isAlreadyMarked = s.status === 'marked' || s.is_marked || locallyMarkedSessions.has(s.session_key);
+            const isAlreadyMarked = s.status === 'marked' || s.is_marked || (payload.already_marked && (s.session_key === payload.active_session_type || s.is_open_now)) || locallyMarkedSessions.has(s.session_key);
             if (isAlreadyMarked) {
               return { ...s, is_marked: true, status: 'marked' as const };
             }
@@ -572,7 +572,7 @@ export const StudentDashboard: React.FC = () => {
               </div>
               {isSessionMarked ? (
                 <div className="active-banner-marked-badge">
-                  <CheckCircle size={15} /> Marked Attendance
+                  <CheckCircle size={15} /> Your Attendance is Marked
                 </div>
               ) : (
                 <button 
@@ -756,7 +756,7 @@ export const StudentDashboard: React.FC = () => {
                       <div className="session-status-container">
                         {isMarked ? (
                           <span className="status-pill-badge marked" title="Your attendance is already recorded">
-                            <CheckCircle size={14} /> Attendance Marked
+                            <CheckCircle size={14} /> Your Attendance is Marked
                           </span>
                         ) : isLive ? (
                           <button
