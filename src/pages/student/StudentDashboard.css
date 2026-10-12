@@ -1740,35 +1740,107 @@
 /* Responsive queries */
 @media (max-width: 640px) {
   .student-dashboard-root {
-    padding: 1rem 0.85rem 3rem 0.85rem;
+    padding: 0.85rem 0.75rem 3rem 0.75rem;
   }
   .student-header-title {
-    font-size: 1.85rem;
+    font-size: 1.75rem;
   }
   .student-profile-card,
   .schedule-section-wrapper,
   .forms-section-wrapper {
-    padding: 1.15rem 1rem;
+    padding: 1rem 0.85rem;
     border-radius: 20px;
+    overflow: hidden;
   }
-  .session-card {
-    padding: 0.85rem 0.9rem;
+  .active-session-banner {
+    padding: 0.8rem 0.9rem;
     border-radius: 16px;
+    gap: 0.6rem;
   }
-  .session-icon-box {
-    width: 40px;
-    height: 40px;
-    min-width: 40px;
+  .active-banner-title {
+    font-size: 0.86rem;
+  }
+
+  /* Schedule Timeline on Mobile */
+  .schedule-timeline-container {
+    gap: 0.85rem;
+  }
+  .schedule-timeline-row {
+    gap: 0.6rem;
+    align-items: stretch;
   }
   .timeline-time-col {
-    width: 60px;
-    min-width: 60px;
+    display: none; /* Hide duplicate time column on mobile to give session card full width */
   }
-  .time-primary {
+  .timeline-dot-wrapper {
+    width: 14px;
+    min-width: 14px;
+  }
+
+  /* Session Card - stacked layout on mobile so button and text never overflow */
+  .session-card {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 0.75rem;
+    padding: 0.85rem 0.9rem;
+    border-radius: 16px;
+    min-width: 0;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .session-left-group {
+    width: 100%;
+    gap: 0.75rem;
+  }
+  .session-icon-box {
+    width: 42px;
+    height: 42px;
+    min-width: 42px;
+    border-radius: 12px;
+  }
+  .session-name-text {
+    font-size: 0.95rem;
+  }
+  .session-time-text {
+    font-size: 0.78rem;
+  }
+  .session-status-container {
+    width: 100%;
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    border-top: 1px dashed rgba(226, 232, 240, 0.8);
+    padding-top: 0.65rem;
+    margin-top: 0.15rem;
+  }
+  .session-card.live-card .session-status-container {
+    border-top-color: rgba(147, 197, 253, 0.5);
+  }
+  .session-status-container .mark-attendance-btn {
+    width: 100%;
+    justify-content: center;
+    padding: 10px 16px;
+    font-size: 0.86rem;
+    border-radius: 14px;
+  }
+  .session-status-container .status-pill-badge {
+    padding: 5px 12px;
     font-size: 0.76rem;
   }
-  .time-secondary {
-    font-size: 0.66rem;
+}
+
+@media (max-width: 380px) {
+  .student-dashboard-root {
+    padding: 0.75rem 0.5rem 3rem 0.5rem;
+  }
+  .student-profile-card,
+  .schedule-section-wrapper,
+  .forms-section-wrapper {
+    padding: 0.85rem 0.7rem;
+  }
+  .profile-student-name {
+    font-size: 1.05rem;
   }
 }
 
