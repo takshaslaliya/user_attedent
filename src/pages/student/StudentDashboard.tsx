@@ -95,6 +95,7 @@ export const StudentDashboard: React.FC = () => {
   const [markingSession, setMarkingSession] = useState<ScheduleItem | null>(null);
   const [isMarking, setIsMarking] = useState(false);
   const [markError, setMarkError] = useState('');
+  const [markSuccess, setMarkSuccess] = useState('');
   const [locallyMarkedSessions, setLocallyMarkedSessions] = useState<Set<string>>(() => {
     try {
       const d = new Date();
