@@ -95,8 +95,32 @@ export const StudentDashboard: React.FC = () => {
   const [markingSession, setMarkingSession] = useState<ScheduleItem | null>(null);
   const [isMarking, setIsMarking] = useState(false);
   const [markError, setMarkError] = useState('');
-  const [markSuccess, setMarkSuccess] = useState('');
-  const [locallyMarkedSessions, setLocallyMarkedSessions] = useState<Set<string>>(new Set());
+  const [locallyMarkedSessions, setLocallyMarkedSessions] = useState<Set<string>>(() => {
+    try {
+      const d = new Date();
+      const storageKey = `hams_marked_${d.getFullYear()}_${d.getMonth() + 1}_${d.getDate()}`;
+      const saved = localStorage.getItem(storageKey);
+      if (saved) {
+        const arr = JSON.parse(saved);
+        return new Set(Array.isArray(arr) ? arr : []);
+      }
+    } catch (e) {}
+    return new Set();
+  });
+
+  const markSessionLocally = (key: string) => {
+    if (!key) return;
+    setLocallyMarkedSessions(prev => {
+      const next = new Set(prev).add(key);
+      try {
+        const d = new Date();
+        const storageKey = `hams_marked_${d.getFullYear()}_${d.getMonth() + 1}_${d.getDate()}`;
+        localStorage.setItem(storageKey, JSON.stringify(Array.from(next)));
+      } catch (e) {}
+      return next;
+    });
+  };
+
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
   
   // Track auto-popup so it triggers once per dashboard visit for unsubmitted forms
@@ -171,6 +195,7 @@ export const StudentDashboard: React.FC = () => {
           }).map((s: ScheduleItem) => {
             const isAlreadyMarked = s.status === 'marked' || s.is_marked || (payload.already_marked && (s.session_key === payload.active_session_type || s.is_open_now)) || locallyMarkedSessions.has(s.session_key);
             if (isAlreadyMarked) {
+              markSessionLocally(s.session_key);
               return { ...s, is_marked: true, status: 'marked' as const };
             }
             return s;
@@ -331,7 +356,7 @@ export const StudentDashboard: React.FC = () => {
       });
 
       if (res.data.success) {
-        setLocallyMarkedSessions(prev => new Set(prev).add(session.session_key));
+        markSessionLocally(session.session_key);
         setMarkSuccess(`Attendance recorded for ${session.session_name}!`);
         // Update local session status immediately
         setSchedules(prev => prev.map(s => {
@@ -349,7 +374,7 @@ export const StudentDashboard: React.FC = () => {
       }
     } catch (err: any) {
       if (err.response?.data?.alreadyMarked || err.response?.data?.message?.toLowerCase().includes('already marked')) {
-        setLocallyMarkedSessions(prev => new Set(prev).add(session.session_key));
+        markSessionLocally(session.session_key);
         setSchedules(prev => prev.map(s => s.session_key === session.session_key ? { ...s, status: 'marked', is_marked: true } : s));
         setMarkSuccess('Attendance already marked for today!');
         setTimeout(() => {
@@ -571,8 +596,8 @@ export const StudentDashboard: React.FC = () => {
                 </div>
               </div>
               {isSessionMarked ? (
-                <div className="active-banner-marked-badge">
-                  <CheckCircle size={15} /> Your Attendance is Marked
+                <div className="status-pill-badge marked" style={{ padding: '6px 14px', borderRadius: '20px', fontWeight: 700, fontSize: '0.82rem' }}>
+                  <CheckCircle size={14} /> Attendance Marked Successfully
                 </div>
               ) : (
                 <button 
@@ -755,8 +780,8 @@ export const StudentDashboard: React.FC = () => {
                       {/* Right Action / Status Badge */}
                       <div className="session-status-container">
                         {isMarked ? (
-                          <span className="status-pill-badge marked" title="Your attendance is already recorded">
-                            <CheckCircle size={14} /> Your Attendance is Marked
+                          <span className="status-pill-badge marked" title="Attendance recorded">
+                            <CheckCircle size={14} /> Attendance Marked Successfully
                           </span>
                         ) : isLive ? (
                           <button

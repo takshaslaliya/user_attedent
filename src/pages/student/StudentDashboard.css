@@ -872,9 +872,9 @@
 }
 
 .status-pill-badge.marked {
-  background: #ecfdf5;
-  color: #059669;
-  border: 1px solid #a7f3d0;
+  background: #f0fdfa;
+  color: #0d9488;
+  border: 1px solid #ccfbf1;
 }
 
 .mark-attendance-btn {
