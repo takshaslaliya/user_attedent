@@ -51,6 +51,10 @@ interface ScheduleItem {
   late_time?: string | null;
   status: 'marked' | 'live' | 'closed' | 'upcoming';
   is_marked?: boolean;
+  is_present?: boolean;
+  is_live?: boolean;
+  can_mark?: boolean;
+  show_mark_button?: boolean;
   is_open_now?: boolean;
   is_closed?: boolean;
   is_upcoming?: boolean;
@@ -168,8 +172,13 @@ export const StudentDashboard: React.FC = () => {
   const fetchStatus = async () => {
     setIsRefreshing(true);
     try {
-      const response = await apiClient.get('/attendance/my-status');
-      if (response.data && (response.data.success || response.data.status === 'ok')) {
+      let response: any = null;
+      try {
+        response = await apiClient.get('/attendance/today-sessions');
+      } catch (tsErr) {
+        response = await apiClient.get('/attendance/my-status');
+      }
+      if (response?.data && (response.data.success || response.data.status === 'ok')) {
         const payload = response.data.data || response.data;
         
         if (payload.student) {
@@ -186,7 +195,7 @@ export const StudentDashboard: React.FC = () => {
           });
         }
 
-        const rawSchedules = payload.all_schedules || [];
+        const rawSchedules = payload.sessions || payload.all_schedules || [];
         if (Array.isArray(rawSchedules)) {
           const validSchedules = rawSchedules.filter((s: ScheduleItem) => {
             if (s.is_active_today === false) return false;
@@ -194,12 +203,27 @@ export const StudentDashboard: React.FC = () => {
             if (s.start_time === s.end_time) return false;
             return true;
           }).map((s: ScheduleItem) => {
-            const isAlreadyMarked = s.status === 'marked' || s.is_marked || (payload.already_marked && (s.session_key === payload.active_session_type || s.is_open_now)) || locallyMarkedSessions.has(s.session_key);
+            const isAlreadyMarked = s.status === 'marked' || s.is_marked || s.is_present || (payload.already_marked && (s.session_key === payload.active_session_type || s.is_open_now || s.is_live)) || locallyMarkedSessions.has(s.session_key);
             if (isAlreadyMarked) {
               markSessionLocally(s.session_key);
-              return { ...s, is_marked: true, status: 'marked' as const };
+              return { 
+                ...s, 
+                is_marked: true, 
+                is_present: true, 
+                can_mark: false, 
+                show_mark_button: false, 
+                status: 'marked' as const 
+              };
             }
-            return s;
+            const isLive = s.status === 'live' || s.is_live || s.is_open_now;
+            return {
+              ...s,
+              is_marked: false,
+              is_present: false,
+              can_mark: Boolean(isLive),
+              show_mark_button: Boolean(isLive),
+              status: isLive ? ('live' as const) : s.status
+            };
           });
           setSchedules(validSchedules);
         }
@@ -478,7 +502,7 @@ export const StudentDashboard: React.FC = () => {
   };
 
   const activeLiveSession = useMemo(() => {
-    return schedules.find(s => s.status === 'live' || (s.is_open_now && (s.status === 'marked' || s.is_marked)));
+    return schedules.find(s => s.status === 'live' || s.is_live || (s.is_open_now && (s.status === 'marked' || s.is_marked || s.is_present)));
   }, [schedules]);
 
   const displayName = studentProfile?.name || user?.name || 'Student';
@@ -580,7 +604,7 @@ export const StudentDashboard: React.FC = () => {
 
         {/* Live Active Banner if a session is currently open */}
         {activeLiveSession && (() => {
-          const isSessionMarked = activeLiveSession.status === 'marked' || activeLiveSession.is_marked || locallyMarkedSessions.has(activeLiveSession.session_key);
+          const isSessionMarked = activeLiveSession.status === 'marked' || activeLiveSession.is_marked || activeLiveSession.is_present || locallyMarkedSessions.has(activeLiveSession.session_key);
           return (
             <div className={`active-session-banner ${isSessionMarked ? 'banner-marked' : ''}`}>
               <div className="active-banner-left">
@@ -736,10 +760,10 @@ export const StudentDashboard: React.FC = () => {
               </div>
             ) : (
               schedules.map((session) => {
-                const isMarked = session.status === 'marked' || session.is_marked || locallyMarkedSessions.has(session.session_key);
-                const isLive = session.status === 'live' && !isMarked;
-                const isClosed = session.status === 'closed' && !isMarked;
-                const isUpcoming = session.status === 'upcoming' && !isMarked;
+                const isMarked = session.status === 'marked' || session.is_marked || session.is_present || locallyMarkedSessions.has(session.session_key);
+                const isLive = (session.status === 'live' || session.is_live || session.is_open_now) && !isMarked;
+                const isClosed = session.status === 'closed' && !isMarked && !isLive;
+                const isUpcoming = !isMarked && !isLive && !isClosed;
 
                 let cardClass = 'session-card';
                 if (isLive) cardClass += ' live-card';
