@@ -135,7 +135,6 @@ export const StudentDashboard: React.FC = () => {
   // One-Day Attendance state
   const [oneDaySessions, setOneDaySessions] = useState<OneDayStudentSession[]>([]);
   const [selectedOneDaySession, setSelectedOneDaySession] = useState<OneDayStudentSession | null>(null);
-  const [oneDayPasscode, setOneDayPasscode] = useState('');
   const [isMarkingOneDay, setIsMarkingOneDay] = useState(false);
   const [oneDayMarkError, setOneDayMarkError] = useState('');
   const [oneDayMarkSuccess, setOneDayMarkSuccess] = useState('');
@@ -495,38 +494,40 @@ export const StudentDashboard: React.FC = () => {
 
   const handleOpenOneDayModal = (sess: OneDayStudentSession) => {
     setSelectedOneDaySession(sess);
-    setOneDayPasscode('');
     setOneDayMarkError('');
     setOneDayMarkSuccess('');
   };
 
-  const handleMarkOneDayAttendance = async () => {
-    if (!selectedOneDaySession) return;
-    if (selectedOneDaySession.has_marked) return;
-
-    if (selectedOneDaySession.marking_method === 'passcode' && !oneDayPasscode.trim()) {
-      setOneDayMarkError('Please enter the session passcode provided by your administrator or mentor.');
-      return;
-    }
+  const handleTriggerMarkOneDayAttendance = async (session: OneDayStudentSession) => {
+    if (session.has_marked) return;
 
     setIsMarkingOneDay(true);
     setOneDayMarkError('');
     setOneDayMarkSuccess('');
 
     try {
+      // 1. Connect to ESP32 GATT service and exchange challenge token via Bluetooth
+      const bleConnection = await connectToESP32();
+      let tokenToUse = bleConnection.token;
+
+      // 2. Disconnect from ESP32 immediately to free up BLE slot for classmates
+      bleConnection.disconnect();
+
+      // 3. Submit verified token with session_id to backend
       const res = await apiClient.post('/one-day-attendance/student/mark', {
-        session_id: selectedOneDaySession.id,
-        passcode: oneDayPasscode.trim() || undefined
+        session_id: session.id,
+        proof: tokenToUse,
+        rssi: -50
       });
 
       if (res.data?.success) {
         const recordData = res.data.data;
-        const successMsg = res.data.message || 'Attendance marked successfully!';
+        const successMsg = res.data.message || 'Attendance verified via Bluetooth!';
         setOneDayMarkSuccess(successMsg);
 
-        // Update local state immediately
+        // Update local session state immediately
         setOneDaySessions(prev => prev.map(s => {
-          if (s.id === selectedOneDaySession.id) {
+          if (s.id === session.id) {
             return {
               ...s,
               has_marked: true,
@@ -550,7 +551,7 @@ export const StudentDashboard: React.FC = () => {
       if (err.response?.status === 409) {
         // Already marked
         setOneDaySessions(prev => prev.map(s => {
-          if (s.id === selectedOneDaySession.id) {
+          if (s.id === session.id) {
             return { ...s, has_marked: true, can_mark: false };
           }
           return s;
@@ -562,7 +563,19 @@ export const StudentDashboard: React.FC = () => {
         }, 1800);
         return;
       }
-      setOneDayMarkError(err.response?.data?.message || err.message || 'Failed to mark attendance. Please try again.');
+      const respData = err.response?.data;
+      if (
+        err.response?.status === 403 && 
+        (respData?.code === 'UNAUTHORIZED_DEVICE_OR_BROWSER' || respData?.message?.toLowerCase().includes('not authorized'))
+      ) {
+        setUnauthorizedModal({
+          show: true,
+          message: respData?.message || 'You are not authorized. Please login again.',
+          countdown: 3
+        });
+        return;
+      }
+      setOneDayMarkError(err.response?.data?.message || err.message || 'Bluetooth connection failed. Ensure Bluetooth is ON and you are close to the ESP32 classroom device.');
     } finally {
       setIsMarkingOneDay(false);
     }
@@ -928,11 +941,9 @@ export const StudentDashboard: React.FC = () => {
                         <div className="one-day-title-block">
                           <div className="one-day-name-row">
                             <span className="one-day-title-text">{session.title}</span>
-                            {session.marking_method === 'passcode' && (
-                              <span className="one-day-passcode-tag" title="Passcode protected session">
-                                <KeyRound size={11} /> Passcode
-                              </span>
-                            )}
+                            <span className="one-day-bluetooth-tag" title="ESP32 Bluetooth Verification">
+                              <Radio size={11} /> Bluetooth
+                            </span>
                           </div>
                           <div className="one-day-time-meta">
                             <span className="one-day-meta-date">
@@ -1472,35 +1483,51 @@ export const StudentDashboard: React.FC = () => {
                   Close
                 </button>
               </div>
+            ) : selectedOneDaySession.has_marked ? (
+              <div className="modal-success-box">
+                <div className="modal-success-icon-wrap" style={{ background: '#ecfdf5', color: '#059669' }}>
+                  <CheckCircle size={44} />
+                </div>
+                <h4 className="modal-success-title" style={{ color: '#065f46' }}>
+                  Attendance Already Marked
+                </h4>
+                <p className="modal-success-msg" style={{ color: '#047857' }}>
+                  Your attendance for {selectedOneDaySession.title} is already confirmed and recorded in the database.
+                </p>
+                <button
+                  className="mark-already-done-close-btn"
+                  onClick={() => setSelectedOneDaySession(null)}
+                >
+                  Done
+                </button>
+              </div>
             ) : (
-              <div className="one-day-marking-content">
+              <div className="modal-radar-wrapper" style={{ marginTop: '0.5rem' }}>
                 {selectedOneDaySession.description && (
-                  <div className="one-day-modal-instructions">
+                  <div className="one-day-modal-instructions" style={{ marginBottom: '1rem', width: '100%' }}>
                     <span className="inst-label">Instructions:</span> {selectedOneDaySession.description}
                   </div>
                 )}
 
-                {selectedOneDaySession.marking_method === 'passcode' ? (
-                  <div className="passcode-input-group">
-                    <label className="passcode-label">
-                      <KeyRound size={15} /> Enter Session Passcode:
-                    </label>
-                    <input
-                      type="text"
-                      className="passcode-input-field"
-                      placeholder="Enter passcode"
-                      value={oneDayPasscode}
-                      onChange={(e) => setOneDayPasscode(e.target.value)}
-                      disabled={isMarkingOneDay}
-                      autoFocus
-                    />
-                    <span className="passcode-hint">Ask your floor leader or supervisor for the session code.</span>
+                <RadarAnimation isScanning={isMarkingOneDay}>
+                  <button
+                    onClick={() => handleTriggerMarkOneDayAttendance(selectedOneDaySession)}
+                    disabled={isMarkingOneDay}
+                    className="modal-fingerprint-btn"
+                    style={{ background: 'linear-gradient(135deg, #0d9488 0%, #0f766e 100%)' }}
+                  >
+                    <Fingerprint size={48} />
+                  </button>
+                </RadarAnimation>
+
+                <div className="modal-scan-text-wrap">
+                  <div className="modal-scan-status">
+                    {isMarkingOneDay ? 'Connecting to ESP32 via Bluetooth...' : 'Tap to Mark Attendance via Bluetooth'}
                   </div>
-                ) : (
-                  <div className="one-tap-confirmation-note">
-                    <p>Click below to verify and record your attendance for this special session.</p>
+                  <div className="modal-scan-hint">
+                    Ensure Bluetooth & Location are enabled and you are near the classroom ESP32 device.
                   </div>
-                )}
+                </div>
 
                 {oneDayMarkError && (
                   <div className="modal-error-badge">
@@ -1508,31 +1535,6 @@ export const StudentDashboard: React.FC = () => {
                     <span>{oneDayMarkError}</span>
                   </div>
                 )}
-
-                <div className="one-day-modal-btn-row">
-                  <button
-                    type="button"
-                    className="modal-cancel-btn"
-                    disabled={isMarkingOneDay}
-                    onClick={() => setSelectedOneDaySession(null)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="modal-confirm-btn"
-                    disabled={isMarkingOneDay}
-                    onClick={handleMarkOneDayAttendance}
-                  >
-                    {isMarkingOneDay ? (
-                      'Recording...'
-                    ) : selectedOneDaySession.marking_method === 'passcode' ? (
-                      'Verify & Mark'
-                    ) : (
-                      'Confirm Attendance'
-                    )}
-                  </button>
-                </div>
               </div>
             )}
           </div>
