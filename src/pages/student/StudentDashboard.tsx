@@ -25,7 +25,10 @@ import {
   Check,
   Send,
   Star,
-  Vote
+  Vote,
+  KeyRound,
+  ShieldCheck,
+  Lock
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import apiClient from '../../services/apiClient';
@@ -89,6 +92,29 @@ interface StudentFormItem {
   };
 }
 
+interface OneDayStudentSession {
+  id: number;
+  title: string;
+  description?: string;
+  session_date: string;
+  start_time: string;
+  end_time: string;
+  late_time?: string | null;
+  marking_method: 'one_tap' | 'passcode';
+  status: string;
+  has_marked: boolean;
+  marked_at?: string | null;
+  marked_time?: string | null;
+  student_status?: 'present' | 'late' | 'absent';
+  is_late: boolean;
+  is_date_today: boolean;
+  is_live_now: boolean;
+  is_upcoming: boolean;
+  is_expired: boolean;
+  can_mark: boolean;
+  time_status_text: string;
+}
+
 export const StudentDashboard: React.FC = () => {
   const { user, logout } = useAuth();
   const [studentProfile, setStudentProfile] = useState<StudentProfile | null>(null);
@@ -105,6 +131,14 @@ export const StudentDashboard: React.FC = () => {
   const [markError, setMarkError] = useState('');
   const [markSuccess, setMarkSuccess] = useState('');
   const [locallyMarkedSessions, setLocallyMarkedSessions] = useState<Set<string>>(new Set());
+
+  // One-Day Attendance state
+  const [oneDaySessions, setOneDaySessions] = useState<OneDayStudentSession[]>([]);
+  const [selectedOneDaySession, setSelectedOneDaySession] = useState<OneDayStudentSession | null>(null);
+  const [oneDayPasscode, setOneDayPasscode] = useState('');
+  const [isMarkingOneDay, setIsMarkingOneDay] = useState(false);
+  const [oneDayMarkError, setOneDayMarkError] = useState('');
+  const [oneDayMarkSuccess, setOneDayMarkSuccess] = useState('');
 
   const markSessionLocally = (key: string) => {
     if (!key) return;
@@ -269,6 +303,16 @@ export const StudentDashboard: React.FC = () => {
         }
       } catch (fErr) {
         console.error('Failed to load active forms', fErr);
+      }
+
+      // Fetch active One-Day Attendance sessions for this student
+      try {
+        const odRes = await apiClient.get('/one-day-attendance/student/available');
+        if (odRes.data?.success && Array.isArray(odRes.data.data)) {
+          setOneDaySessions(odRes.data.data);
+        }
+      } catch (odErr) {
+        console.error('Failed to load one-day attendance sessions:', odErr);
       }
     } catch (err: any) {
       if (err.response?.status === 401) {
@@ -446,6 +490,81 @@ export const StudentDashboard: React.FC = () => {
       setMarkError(err.response?.data?.message || err.message || 'An unexpected error occurred during attendance marking.');
     } finally {
       setIsMarking(false);
+    }
+  };
+
+  const handleOpenOneDayModal = (sess: OneDayStudentSession) => {
+    setSelectedOneDaySession(sess);
+    setOneDayPasscode('');
+    setOneDayMarkError('');
+    setOneDayMarkSuccess('');
+  };
+
+  const handleMarkOneDayAttendance = async () => {
+    if (!selectedOneDaySession) return;
+    if (selectedOneDaySession.has_marked) return;
+
+    if (selectedOneDaySession.marking_method === 'passcode' && !oneDayPasscode.trim()) {
+      setOneDayMarkError('Please enter the session passcode provided by your administrator or mentor.');
+      return;
+    }
+
+    setIsMarkingOneDay(true);
+    setOneDayMarkError('');
+    setOneDayMarkSuccess('');
+
+    try {
+      const res = await apiClient.post('/one-day-attendance/student/mark', {
+        session_id: selectedOneDaySession.id,
+        passcode: oneDayPasscode.trim() || undefined
+      });
+
+      if (res.data?.success) {
+        const recordData = res.data.data;
+        const successMsg = res.data.message || 'Attendance marked successfully!';
+        setOneDayMarkSuccess(successMsg);
+
+        // Update local state immediately
+        setOneDaySessions(prev => prev.map(s => {
+          if (s.id === selectedOneDaySession.id) {
+            return {
+              ...s,
+              has_marked: true,
+              can_mark: false,
+              marked_time: recordData?.marked_time || 'Just now',
+              student_status: recordData?.status || 'present',
+              is_late: recordData?.is_late || false
+            };
+          }
+          return s;
+        }));
+
+        setTimeout(() => {
+          setSelectedOneDaySession(null);
+          setOneDayMarkSuccess('');
+        }, 1800);
+      } else {
+        throw new Error(res.data?.message || 'Failed to mark attendance.');
+      }
+    } catch (err: any) {
+      if (err.response?.status === 409) {
+        // Already marked
+        setOneDaySessions(prev => prev.map(s => {
+          if (s.id === selectedOneDaySession.id) {
+            return { ...s, has_marked: true, can_mark: false };
+          }
+          return s;
+        }));
+        setOneDayMarkSuccess(err.response?.data?.message || 'Attendance already marked for this session.');
+        setTimeout(() => {
+          setSelectedOneDaySession(null);
+          setOneDayMarkSuccess('');
+        }, 1800);
+        return;
+      }
+      setOneDayMarkError(err.response?.data?.message || err.message || 'Failed to mark attendance. Please try again.');
+    } finally {
+      setIsMarkingOneDay(false);
     }
   };
 
@@ -766,6 +885,142 @@ export const StudentDashboard: React.FC = () => {
             </div>
           </div>
         )}
+
+        {/* One-Day Attendance Section */}
+        <div className="one-day-section-wrapper">
+          <div className="schedule-section-header">
+            <div className="schedule-title-group">
+              <div className="schedule-accent-bar" style={{ background: 'linear-gradient(to bottom, #0d9488, #14b8a6)' }}></div>
+              <h3 className="schedule-section-title">One-Day Attendance</h3>
+            </div>
+            <span className="schedule-session-count" style={{ background: '#ccfbf1', color: '#0f766e' }}>
+              {oneDaySessions.length} {oneDaySessions.length === 1 ? 'Session' : 'Sessions'}
+            </span>
+          </div>
+
+          {oneDaySessions.length === 0 ? (
+            <div className="one-day-empty-card">
+              <CalendarCheck size={28} className="one-day-empty-icon" />
+              <div className="one-day-empty-title">No Active One-Day Sessions</div>
+              <div className="one-day-empty-sub">
+                Special on-demand attendance sessions configured by administration will appear here.
+              </div>
+            </div>
+          ) : (
+            <div className="one-day-cards-list">
+              {oneDaySessions.map((session) => {
+                const isMarked = session.has_marked;
+                const isLive = session.is_live_now && !isMarked;
+                const isUpcoming = session.is_upcoming && !isMarked;
+                const isExpired = (session.is_expired || session.status === 'completed') && !isMarked;
+
+                return (
+                  <div
+                    key={`oneday_${session.id}`}
+                    className={`one-day-student-card ${isLive ? 'card-live' : isMarked ? 'card-marked' : isExpired ? 'card-expired' : 'card-upcoming'}`}
+                  >
+                    {/* Header */}
+                    <div className="one-day-card-header">
+                      <div className="one-day-header-left">
+                        <div className={`one-day-icon-circle ${isMarked ? 'icon-marked' : isLive ? 'icon-live' : 'icon-default'}`}>
+                          {isMarked ? <CheckCircle size={20} /> : isLive ? <CalendarCheck size={20} /> : <Calendar size={20} />}
+                        </div>
+                        <div className="one-day-title-block">
+                          <div className="one-day-name-row">
+                            <span className="one-day-title-text">{session.title}</span>
+                            {session.marking_method === 'passcode' && (
+                              <span className="one-day-passcode-tag" title="Passcode protected session">
+                                <KeyRound size={11} /> Passcode
+                              </span>
+                            )}
+                          </div>
+                          <div className="one-day-time-meta">
+                            <span className="one-day-meta-date">
+                              <Calendar size={12} /> {session.session_date}
+                            </span>
+                            <span className="meta-dot">•</span>
+                            <span className="one-day-meta-window">
+                              <Clock size={12} /> {formatTo12Hour(session.start_time)} – {formatTo12Hour(session.end_time)}
+                            </span>
+                            {session.late_time && (
+                              <>
+                                <span className="meta-dot">•</span>
+                                <span className="one-day-late-cutoff">
+                                  Late after {formatTo12Hour(session.late_time)}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Status Badge */}
+                      <div className="one-day-header-right">
+                        {isMarked ? (
+                          <span className={`one-day-pill marked ${session.is_late ? 'late' : 'ontime'}`}>
+                            <Check size={12} strokeWidth={3} /> {session.is_late ? 'Late Marked' : 'Marked'}
+                          </span>
+                        ) : isLive ? (
+                          <span className="one-day-pill live">
+                            <span className="pulse-indicator"></span> Live Now
+                          </span>
+                        ) : isUpcoming ? (
+                          <span className="one-day-pill upcoming">
+                            <Clock size={12} /> Upcoming
+                          </span>
+                        ) : (
+                          <span className="one-day-pill expired">
+                            <Lock size={12} /> Closed
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Instructions / Description if provided */}
+                    {session.description && (
+                      <div className="one-day-instructions-box">
+                        <strong className="inst-prefix">Note:</strong> {session.description}
+                      </div>
+                    )}
+
+                    {/* Action Bar */}
+                    <div className="one-day-card-footer">
+                      {isMarked ? (
+                        <div className="one-day-marked-status-bar">
+                          <CheckCircle size={15} className="marked-status-icon" />
+                          <span>
+                            Attendance verified at <strong>{session.marked_time || 'Recorded'}</strong>
+                            {session.is_late ? ' (Late Arrival)' : ' (On-Time)'}
+                          </span>
+                        </div>
+                      ) : isLive ? (
+                        <button
+                          type="button"
+                          className="one-day-mark-action-btn"
+                          onClick={() => handleOpenOneDayModal(session)}
+                        >
+                          <Fingerprint size={17} /> Mark Attendance Now
+                        </button>
+                      ) : isUpcoming ? (
+                        <div className="one-day-disabled-note upcoming">
+                          <Clock size={13} />
+                          <span>
+                            Opens {session.is_date_today ? 'today' : `on ${session.session_date}`} at {formatTo12Hour(session.start_time)}
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="one-day-disabled-note expired">
+                          <Lock size={13} />
+                          <span>Attendance window closed at {formatTo12Hour(session.end_time)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
 
         {/* Today's Schedule Section */}
         <div className="schedule-section-wrapper">
@@ -1170,6 +1425,119 @@ export const StudentDashboard: React.FC = () => {
           </div>
         );
       })()}
+
+      {/* One-Day Attendance Marking Modal */}
+      {selectedOneDaySession && (
+        <div className="modal-overlay" onClick={() => !isMarkingOneDay && setSelectedOneDaySession(null)}>
+          <div className="modal-content-box one-day-modal-box" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="modal-close-btn"
+              onClick={() => {
+                if (!isMarkingOneDay) {
+                  setSelectedOneDaySession(null);
+                  setOneDayMarkError('');
+                  setOneDayMarkSuccess('');
+                }
+              }}
+            >
+              <X size={18} />
+            </button>
+
+            <div className="modal-header-icon-box" style={{ background: '#ccfbf1', color: '#0f766e' }}>
+              <CalendarCheck size={28} />
+            </div>
+
+            <h3 className="modal-title">
+              {selectedOneDaySession.title}
+            </h3>
+            <p className="modal-subtitle">
+              Session Window: <strong>{formatTo12Hour(selectedOneDaySession.start_time)} – {formatTo12Hour(selectedOneDaySession.end_time)}</strong>
+            </p>
+
+            {oneDayMarkSuccess ? (
+              <div className="modal-success-box">
+                <div className="modal-success-icon-wrap" style={{ background: '#ecfdf5', color: '#059669' }}>
+                  <CheckCircle size={44} />
+                </div>
+                <h4 className="modal-success-title">
+                  Attendance Recorded!
+                </h4>
+                <p className="modal-success-msg">
+                  {oneDayMarkSuccess}
+                </p>
+                <button
+                  className="mark-already-done-close-btn"
+                  onClick={() => setSelectedOneDaySession(null)}
+                >
+                  Close
+                </button>
+              </div>
+            ) : (
+              <div className="one-day-marking-content">
+                {selectedOneDaySession.description && (
+                  <div className="one-day-modal-instructions">
+                    <span className="inst-label">Instructions:</span> {selectedOneDaySession.description}
+                  </div>
+                )}
+
+                {selectedOneDaySession.marking_method === 'passcode' ? (
+                  <div className="passcode-input-group">
+                    <label className="passcode-label">
+                      <KeyRound size={15} /> Enter Session Passcode:
+                    </label>
+                    <input
+                      type="text"
+                      className="passcode-input-field"
+                      placeholder="Enter passcode"
+                      value={oneDayPasscode}
+                      onChange={(e) => setOneDayPasscode(e.target.value)}
+                      disabled={isMarkingOneDay}
+                      autoFocus
+                    />
+                    <span className="passcode-hint">Ask your floor leader or supervisor for the session code.</span>
+                  </div>
+                ) : (
+                  <div className="one-tap-confirmation-note">
+                    <p>Click below to verify and record your attendance for this special session.</p>
+                  </div>
+                )}
+
+                {oneDayMarkError && (
+                  <div className="modal-error-badge">
+                    <AlertTriangle size={15} />
+                    <span>{oneDayMarkError}</span>
+                  </div>
+                )}
+
+                <div className="one-day-modal-btn-row">
+                  <button
+                    type="button"
+                    className="modal-cancel-btn"
+                    disabled={isMarkingOneDay}
+                    onClick={() => setSelectedOneDaySession(null)}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="modal-confirm-btn"
+                    disabled={isMarkingOneDay}
+                    onClick={handleMarkOneDayAttendance}
+                  >
+                    {isMarkingOneDay ? (
+                      'Recording...'
+                    ) : selectedOneDaySession.marking_method === 'passcode' ? (
+                      'Verify & Mark'
+                    ) : (
+                      'Confirm Attendance'
+                    )}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Unauthorized Device / Browser Modal */}
       {unauthorizedModal.show && createPortal(
