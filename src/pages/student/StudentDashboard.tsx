@@ -62,6 +62,7 @@ interface ScheduleItem {
   session_key: string;
   session_name: string;
   icon_name?: string;
+  is_for_all_students?: boolean;
   start_time: string;
   end_time: string;
   late_time?: string | null;
@@ -476,16 +477,23 @@ export const StudentDashboard: React.FC = () => {
 
     try {
       // 1. Connect to ESP32 GATT service and exchange challenge token
-      const bleConnection = await connectToESP32();
+      const isGlobalSession = session.is_for_all_students !== 0 && session.is_for_all_students !== false;
+      const studentFloorId = studentProfile?.floor_id !== undefined ? Number(studentProfile.floor_id) : (user?.floor_id !== undefined ? Number(user.floor_id) : 0);
+
+      const bleConnection = await connectToESP32({
+        isGlobal: isGlobalSession,
+        floorId: studentFloorId
+      });
       let tokenToUse = bleConnection.token;
 
       // 2. Disconnect from ESP32 immediately to free up BLE slot for classmates
       bleConnection.disconnect();
 
-      // 3. Submit verified token with session_key to backend
+      // 3. Submit verified token with session_key and floor_id to backend
       const res = await apiClient.post('/attendance/mark', {
         proof: tokenToUse,
         rssi: -50,
+        floor_id: studentFloorId,
         session_key: session.session_key
       });
 
@@ -565,7 +573,13 @@ export const StudentDashboard: React.FC = () => {
 
     try {
       // 1. Connect to ESP32 GATT service and exchange challenge token via Bluetooth
-      const bleConnection = await connectToESP32();
+      const studentFloorId = studentProfile?.floor_id !== undefined ? Number(studentProfile.floor_id) : (user?.floor_id !== undefined ? Number(user.floor_id) : 0);
+      const isGlobalSession = Boolean((session as any).is_for_all_students ?? true);
+
+      const bleConnection = await connectToESP32({
+        isGlobal: isGlobalSession,
+        floorId: studentFloorId
+      });
       let tokenToUse = bleConnection.token;
 
       // 2. Disconnect from ESP32 immediately to free up BLE slot for classmates
@@ -575,6 +589,7 @@ export const StudentDashboard: React.FC = () => {
       const res = await apiClient.post('/one-day-attendance/student/mark', {
         session_id: session.id,
         proof: tokenToUse,
+        floor_id: studentFloorId,
         rssi: -50
       });
 
