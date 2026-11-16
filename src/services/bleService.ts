@@ -47,8 +47,8 @@ export const connectToESP32 = async (options?: BLEAuthOptions): Promise<BLEConne
 
     console.log('Connecting to device...');
     let token = 'BEACON_ONLY';
-    let writeToken = async (_newToken: string, _durationMinutes: number) => {};
-    
+    let writeToken = async (_newToken: string, _durationMinutes: number) => { };
+
     try {
       if (device.gatt) {
         console.log('Connecting to GATT Server...');
@@ -104,7 +104,7 @@ export const connectToESP32 = async (options?: BLEAuthOptions): Promise<BLEConne
           } else {
             token = rawResponse || 'BEACON_ONLY';
           }
-          
+
           writeToken = async (newToken: string, durationMinutes: number) => {
             const writeCommand = `SET:${newToken}:${durationMinutes}`;
             console.log('Writing to ESP32:', writeCommand);
