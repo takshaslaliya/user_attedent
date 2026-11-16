@@ -1,16 +1,16 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  Users, 
-  Moon, 
-  BookOpen, 
-  Sparkles, 
-  RotateCw, 
-  LogOut, 
-  Phone, 
-  CheckCircle, 
-  Fingerprint, 
-  AlertTriangle, 
+import {
+  Users,
+  Moon,
+  BookOpen,
+  Sparkles,
+  RotateCw,
+  LogOut,
+  Phone,
+  CheckCircle,
+  Fingerprint,
+  AlertTriangle,
   X,
   Calendar,
   CalendarCheck,
@@ -46,6 +46,18 @@ interface StudentProfile {
   tags: Array<{ id: number; name: string; color?: string }>;
 }
 
+interface AttendancePhaseWindowInfo {
+  start_time: string;
+  end_time: string;
+  late_time?: string | null;
+  is_open_now?: boolean;
+  is_marked?: boolean;
+  marked_at?: string | null;
+  is_late?: boolean;
+  is_eligible?: boolean;
+  status: string;
+}
+
 interface ScheduleItem {
   session_key: string;
   session_name: string;
@@ -53,6 +65,14 @@ interface ScheduleItem {
   start_time: string;
   end_time: string;
   late_time?: string | null;
+  has_multiple_attendance?: boolean;
+  phase2_start_time?: string | null;
+  phase2_end_time?: string | null;
+  phase2_late_time?: string | null;
+  active_phase?: 1 | 2 | null;
+  first_attendance?: AttendancePhaseWindowInfo;
+  second_attendance?: AttendancePhaseWindowInfo;
+  overall_status?: string;
   status: 'marked' | 'live' | 'closed' | 'upcoming' | 'leave';
   is_marked?: boolean;
   is_present?: boolean;
@@ -159,11 +179,11 @@ export const StudentDashboard: React.FC = () => {
       Object.keys(localStorage).forEach(k => {
         if (k.startsWith('hams_marked_')) localStorage.removeItem(k);
       });
-    } catch (e) {}
+    } catch (e) { }
   }, []);
 
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
-  
+
   // Track auto-popup so it triggers once per dashboard visit for unsubmitted forms
   const hasAutoPoppedRef = useRef(false);
 
@@ -216,7 +236,7 @@ export const StudentDashboard: React.FC = () => {
       }
       if (response?.data && (response.data.success || response.data.status === 'ok')) {
         const payload = response.data.data || response.data;
-        
+
         if (payload.student) {
           setStudentProfile(payload.student);
         } else if (user) {
@@ -239,18 +259,37 @@ export const StudentDashboard: React.FC = () => {
             if (s.start_time === s.end_time) return false;
             return true;
           }).map((s: ScheduleItem) => {
+            if (s.has_multiple_attendance) {
+              const isBothMarked = Boolean(s.first_attendance?.is_marked && s.second_attendance?.is_marked);
+              const isOnLeave = Boolean(s.status === 'leave' || s.is_on_leave);
+              if (isBothMarked) {
+                markSessionLocally(s.session_key);
+              } else {
+                unmarkSessionLocally(s.session_key);
+              }
+              return {
+                ...s,
+                is_marked: isBothMarked,
+                is_present: isBothMarked,
+                is_on_leave: isOnLeave,
+                can_mark: Boolean(s.can_mark),
+                show_mark_button: Boolean(s.show_mark_button),
+                status: isBothMarked ? ('marked' as const) : (isOnLeave ? ('leave' as const) : (s.can_mark ? ('live' as const) : s.status))
+              };
+            }
+
             const isServerMarked = s.status === 'marked' || s.is_marked || s.is_present;
             if (isServerMarked) {
               markSessionLocally(s.session_key);
-              return { 
-                ...s, 
-                is_marked: true, 
-                is_present: true, 
+              return {
+                ...s,
+                is_marked: true,
+                is_present: true,
                 is_absent: false,
                 is_on_leave: false,
-                can_mark: false, 
-                show_mark_button: false, 
-                status: 'marked' as const 
+                can_mark: false,
+                show_mark_button: false,
+                status: 'marked' as const
               };
             }
             unmarkSessionLocally(s.session_key);
@@ -397,12 +436,12 @@ export const StudentDashboard: React.FC = () => {
       if (res.data.success || res.data.status === 'ok' || res.data.status === 'success') {
         setFormSubmitSuccess('Your response has been successfully recorded!');
         // Update local state
-        setActiveForms(prev => prev.map(f => f.id === selectedForm.id ? { 
-          ...f, 
-          has_submitted: true, 
-          my_response: { submitted_at: new Date().toISOString(), answers: formAnswers } 
+        setActiveForms(prev => prev.map(f => f.id === selectedForm.id ? {
+          ...f,
+          has_submitted: true,
+          my_response: { submitted_at: new Date().toISOString(), answers: formAnswers }
         } : f));
-        
+
         setTimeout(() => {
           setSelectedForm(null);
           setFormSubmitSuccess('');
@@ -424,8 +463,12 @@ export const StudentDashboard: React.FC = () => {
   };
 
   const handleTriggerMarkAttendance = async (session: ScheduleItem) => {
-    if (session.status === 'marked' || session.is_marked || locallyMarkedSessions.has(session.session_key)) {
-      return;
+    if (session.has_multiple_attendance) {
+      if (!session.can_mark) return;
+    } else {
+      if (session.status === 'marked' || session.is_marked || locallyMarkedSessions.has(session.session_key)) {
+        return;
+      }
     }
     setIsMarking(true);
     setMarkError('');
@@ -447,23 +490,39 @@ export const StudentDashboard: React.FC = () => {
       });
 
       if (res.data.success) {
-        markSessionLocally(session.session_key);
-        setMarkSuccess(`Attendance recorded for ${session.session_name}!`);
-        // Update local session status immediately
-        setSchedules(prev => prev.map(s => {
-          if (s.session_key === session.session_key) {
-            return { ...s, status: 'marked', is_marked: true };
+        if (session.has_multiple_attendance) {
+          const isPhase2 = res.data.phase === 2 || session.active_phase === 2;
+          const msg = isPhase2
+            ? `2nd Attendance recorded for ${session.session_name}! Attendance Complete ✨`
+            : `1st Attendance recorded for ${session.session_name}! Don't forget to mark 2nd attendance during window 2.`;
+          setMarkSuccess(msg);
+          if (isPhase2) {
+            markSessionLocally(session.session_key);
           }
-          return s;
-        }));
+          fetchStatus();
+        } else {
+          markSessionLocally(session.session_key);
+          setMarkSuccess(`Attendance recorded for ${session.session_name}!`);
+          setSchedules(prev => prev.map(s => {
+            if (s.session_key === session.session_key) {
+              return { ...s, status: 'marked', is_marked: true };
+            }
+            return s;
+          }));
+        }
         setTimeout(() => {
           setMarkingSession(null);
           setMarkSuccess('');
-        }, 1800);
+        }, 2000);
       } else {
         throw new Error(res.data.message || 'Failed to mark attendance.');
       }
     } catch (err: any) {
+      const respData = err.response?.data;
+      if (respData?.code === 'NOT_ELIGIBLE_MISSED_FIRST') {
+        setMarkError('Not Eligible: You missed the 1st attendance window. Second attendance is only available to students who attended the 1st window.');
+        return;
+      }
       if (err.response?.data?.alreadyMarked || err.response?.data?.message?.toLowerCase().includes('already marked')) {
         markSessionLocally(session.session_key);
         setSchedules(prev => prev.map(s => s.session_key === session.session_key ? { ...s, status: 'marked', is_marked: true } : s));
@@ -474,9 +533,8 @@ export const StudentDashboard: React.FC = () => {
         }, 1800);
         return;
       }
-      const respData = err.response?.data;
       if (
-        err.response?.status === 403 && 
+        err.response?.status === 403 &&
         (respData?.code === 'UNAUTHORIZED_DEVICE_OR_BROWSER' || respData?.message?.toLowerCase().includes('not authorized'))
       ) {
         setUnauthorizedModal({
@@ -565,7 +623,7 @@ export const StudentDashboard: React.FC = () => {
       }
       const respData = err.response?.data;
       if (
-        err.response?.status === 403 && 
+        err.response?.status === 403 &&
         (respData?.code === 'UNAUTHORIZED_DEVICE_OR_BROWSER' || respData?.message?.toLowerCase().includes('not authorized'))
       ) {
         setUnauthorizedModal({
@@ -657,7 +715,12 @@ export const StudentDashboard: React.FC = () => {
   };
 
   const activeLiveSession = useMemo(() => {
-    return schedules.find(s => s.status === 'live' || s.is_live || (s.is_open_now && (s.status === 'marked' || s.is_marked || s.is_present)));
+    return schedules.find(s => {
+      if (s.has_multiple_attendance) {
+        return Boolean(s.can_mark || s.status === 'live' || s.is_live || s.first_attendance?.is_open_now || s.second_attendance?.is_open_now);
+      }
+      return s.status === 'live' || s.is_live || (s.is_open_now && (s.status === 'marked' || s.is_marked || s.is_present));
+    });
   }, [schedules]);
 
   const displayName = studentProfile?.name || user?.name || 'Student';
@@ -668,13 +731,13 @@ export const StudentDashboard: React.FC = () => {
 
   return (
     <div className="student-dashboard-root">
-      
+
       {/* Ambient background glow layers for laptop & mobile */}
       <div className="ambient-glow glow-top-left"></div>
       <div className="ambient-glow glow-top-right"></div>
-      
+
       <div className="student-dashboard-container">
-        
+
         {/* Top Header */}
         <header className="student-header">
           <div className="student-header-left">
@@ -688,10 +751,10 @@ export const StudentDashboard: React.FC = () => {
             <h1 className="student-header-title">Attendance</h1>
             <p className="student-header-subtitle">Daily verification & routine schedule</p>
           </div>
-          
+
           <div className="student-header-actions">
             {activeForms.length > 0 && (
-              <button 
+              <button
                 className={`student-forms-header-btn ${unsubmittedFormsCount > 0 ? 'has-unsubmitted' : ''}`}
                 onClick={() => {
                   const targetForm = activeForms.find(f => !f.has_submitted) || activeForms[0];
@@ -708,16 +771,16 @@ export const StudentDashboard: React.FC = () => {
                 )}
               </button>
             )}
-            <button 
+            <button
               className={`student-icon-btn ${isRefreshing ? 'is-loading' : ''}`}
-              onClick={fetchStatus} 
+              onClick={fetchStatus}
               title="Refresh Schedule"
             >
               <RotateCw size={17} className={isRefreshing ? 'spin-animation' : ''} />
             </button>
-            <button 
-              className="student-icon-btn logout-btn" 
-              onClick={logout} 
+            <button
+              className="student-icon-btn logout-btn"
+              onClick={logout}
               title="Logout"
             >
               <LogOut size={17} />
@@ -727,8 +790,8 @@ export const StudentDashboard: React.FC = () => {
 
         {/* Action Required: Unsubmitted Form Banner */}
         {unsubmittedFormsCount > 0 && (
-          <div 
-            className="unanswered-form-banner" 
+          <div
+            className="unanswered-form-banner"
             onClick={() => {
               const unsubmitted = activeForms.find(f => !f.has_submitted);
               if (unsubmitted) handleOpenFormModal(unsubmitted);
@@ -759,37 +822,72 @@ export const StudentDashboard: React.FC = () => {
 
         {/* Live Active Banner if a session is currently open */}
         {activeLiveSession && (() => {
-          const isSessionMarked = activeLiveSession.status === 'marked' || activeLiveSession.is_marked || activeLiveSession.is_present || locallyMarkedSessions.has(activeLiveSession.session_key);
-          const isSessionOnLeave = activeLiveSession.status === 'leave' || activeLiveSession.is_on_leave;
+          const isTwoPhase = Boolean(activeLiveSession.has_multiple_attendance);
+          const isSessionMarked = isTwoPhase
+            ? (activeLiveSession.active_phase === 1
+              ? activeLiveSession.first_attendance?.is_marked
+              : (activeLiveSession.active_phase === 2
+                ? activeLiveSession.second_attendance?.is_marked
+                : (activeLiveSession.first_attendance?.is_marked && activeLiveSession.second_attendance?.is_marked)))
+            : (activeLiveSession.status === 'marked' || activeLiveSession.is_marked || activeLiveSession.is_present || locallyMarkedSessions.has(activeLiveSession.session_key));
+          const isSessionOnLeave = (activeLiveSession.status === 'leave' || activeLiveSession.is_on_leave) && !isSessionMarked;
+          const isNotEligibleForPhase2 = isTwoPhase && activeLiveSession.active_phase === 2 && !activeLiveSession.first_attendance?.is_marked;
+
+          let bannerLabel = isSessionMarked ? 'ATTENDANCE CONFIRMED' : isSessionOnLeave ? 'APPROVED LEAVE' : 'SESSION LIVE NOW';
+          let timeWindowText = `${formatTo12Hour(activeLiveSession.start_time)} - ${formatTo12Hour(activeLiveSession.end_time)}`;
+          let buttonLabel = 'Mark Now';
+
+          if (isTwoPhase) {
+            if (activeLiveSession.active_phase === 1) {
+              bannerLabel = isSessionMarked ? '1ST ATTENDANCE CONFIRMED' : '1ST ATTENDANCE LIVE NOW';
+              timeWindowText = `Window 1: ${formatTo12Hour(activeLiveSession.first_attendance?.start_time || activeLiveSession.start_time)} - ${formatTo12Hour(activeLiveSession.first_attendance?.end_time || activeLiveSession.end_time)}`;
+              buttonLabel = 'Mark 1st Now';
+            } else if (activeLiveSession.active_phase === 2) {
+              if (isSessionMarked) {
+                bannerLabel = '2ND ATTENDANCE CONFIRMED (COMPLETE ✨)';
+              } else if (isNotEligibleForPhase2) {
+                bannerLabel = 'NOT ELIGIBLE (MISSED 1ST ATTENDANCE)';
+              } else {
+                bannerLabel = '2ND ATTENDANCE LIVE NOW';
+              }
+              timeWindowText = `Window 2: ${formatTo12Hour(activeLiveSession.second_attendance?.start_time || activeLiveSession.phase2_start_time)} - ${formatTo12Hour(activeLiveSession.second_attendance?.end_time || activeLiveSession.phase2_end_time)}`;
+              buttonLabel = 'Mark 2nd Now';
+            }
+          }
+
           return (
-            <div className={`active-session-banner ${isSessionMarked ? 'banner-marked' : isSessionOnLeave ? 'banner-leave' : ''}`}>
+            <div className={`active-session-banner ${isSessionMarked ? 'banner-marked' : isSessionOnLeave ? 'banner-leave' : isNotEligibleForPhase2 ? 'banner-not-eligible' : ''}`}>
               <div className="active-banner-left">
                 <span className={isSessionMarked ? "marked-check-dot" : isSessionOnLeave ? "leave-calendar-dot" : "live-pulse-dot"}>
                   {isSessionMarked ? <Check size={13} strokeWidth={3} /> : isSessionOnLeave ? <CalendarCheck size={13} strokeWidth={2.5} /> : null}
                 </span>
                 <div>
                   <div className="active-banner-label">
-                    {isSessionMarked ? 'ATTENDANCE CONFIRMED' : isSessionOnLeave ? 'APPROVED LEAVE' : 'SESSION LIVE NOW'}
+                    {bannerLabel}
                   </div>
                   <div className="active-banner-title">
-                    {activeLiveSession.session_name} ({formatTo12Hour(activeLiveSession.start_time)} - {formatTo12Hour(activeLiveSession.end_time)})
+                    {activeLiveSession.session_name} ({timeWindowText})
                   </div>
                 </div>
               </div>
               {isSessionMarked ? (
                 <div className="active-banner-marked-badge">
-                  <CheckCircle size={14} strokeWidth={2.5} /> Marked
+                  <CheckCircle size={14} strokeWidth={2.5} /> {isTwoPhase && activeLiveSession.active_phase === 1 ? '1st Marked' : isTwoPhase && activeLiveSession.active_phase === 2 ? '2nd Marked' : 'Marked'}
                 </div>
               ) : isSessionOnLeave ? (
                 <div className="active-banner-leave-badge">
                   <CalendarCheck size={14} strokeWidth={2.5} /> On Leave
                 </div>
+              ) : isNotEligibleForPhase2 ? (
+                <div className="active-banner-leave-badge" style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fecaca' }}>
+                  <AlertTriangle size={14} strokeWidth={2.5} /> Missed 1st Window
+                </div>
               ) : (
-                <button 
+                <button
                   className="active-banner-cta"
                   onClick={() => handleOpenMarkModal(activeLiveSession)}
                 >
-                  <Fingerprint size={16} /> Mark Now
+                  <Fingerprint size={16} /> {buttonLabel}
                 </button>
               )}
             </div>
@@ -802,7 +900,7 @@ export const StudentDashboard: React.FC = () => {
             <div className="profile-avatar-circle">
               {getInitials(displayName)}
             </div>
-            
+
             <div className="profile-main-info">
               <div className="profile-name-row">
                 <h2 className="profile-student-name">{displayName}</h2>
@@ -811,7 +909,7 @@ export const StudentDashboard: React.FC = () => {
                   <span>Verified</span>
                 </div>
               </div>
-              
+
               <div className="profile-badges-row">
                 {displayId && (
                   <span className="pill-badge id-badge">
@@ -861,8 +959,8 @@ export const StudentDashboard: React.FC = () => {
                 const hasSubmitted = form.has_submitted;
 
                 return (
-                  <div 
-                    key={`form_${form.id}`} 
+                  <div
+                    key={`form_${form.id}`}
                     className={`form-student-card ${isMandatory ? 'mandatory' : ''} ${isPoll ? 'poll-type' : ''}`}
                     onClick={() => handleOpenFormModal(form)}
                   >
@@ -1054,6 +1152,190 @@ export const StudentDashboard: React.FC = () => {
               </div>
             ) : (
               schedules.map((session) => {
+                if (session.has_multiple_attendance) {
+                  const isBothMarked = Boolean(session.first_attendance?.is_marked && session.second_attendance?.is_marked);
+                  const isOnLeave = Boolean((session.status === 'leave' || session.is_on_leave) && !isBothMarked);
+                  const is1stMarked = Boolean(session.first_attendance?.is_marked);
+                  const is2ndMarked = Boolean(session.second_attendance?.is_marked);
+                  const is1stOpen = Boolean(session.first_attendance?.is_open_now);
+                  const is2ndOpen = Boolean(session.second_attendance?.is_open_now);
+                  const isPhase2NotEligible = !is1stMarked && session.first_attendance?.status === 'closed';
+
+                  let cardClass = 'session-card multi-phase-card';
+                  if (session.can_mark) cardClass += ' live-card';
+                  else if (isBothMarked) cardClass += ' marked-card';
+                  else if (isOnLeave) cardClass += ' leave-card';
+                  else if (isPhase2NotEligible) cardClass += ' closed-card';
+
+                  return (
+                    <div key={session.session_key} className="schedule-timeline-row">
+                      {/* Left Start Time */}
+                      <div className="timeline-time-col">
+                        <span className="time-primary">{formatTo12Hour(session.first_attendance?.start_time || session.start_time)}</span>
+                        <span className="time-secondary">{formatTo12Hour(session.second_attendance?.end_time || session.phase2_end_time || session.end_time)}</span>
+                      </div>
+
+                      {/* Timeline Connector & Dot */}
+                      <div className="timeline-dot-wrapper">
+                        <div className="timeline-line"></div>
+                        <div className={`timeline-dot ${isBothMarked ? 'marked' : isOnLeave ? 'leave' : session.can_mark ? 'live' : 'upcoming'}`}></div>
+                      </div>
+
+                      {/* Session Card */}
+                      <div className={cardClass}>
+                        <div className="multi-phase-header">
+                          <div className="session-left-group">
+                            {getSessionIcon(session)}
+
+                            <div className="session-info-group">
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                <h4 className="session-name-text">{session.session_name}</h4>
+                                <span className="multi-phase-indicator-pill">2-Phase Session</span>
+                              </div>
+                              <div className="session-time-text">
+                                Full Window: {formatTo12Hour(session.first_attendance?.start_time || session.start_time)} – {formatTo12Hour(session.second_attendance?.end_time || session.phase2_end_time || session.end_time)}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="multi-phase-overall-badge-wrap">
+                            {isBothMarked ? (
+                              <span className="status-pill-badge marked" title="Both attendances completed">
+                                <CheckCircle size={13} strokeWidth={2.5} /> Complete (Both Marked)
+                              </span>
+                            ) : isOnLeave ? (
+                              <span className="status-pill-badge leave" title="Approved leave for today">
+                                <CalendarCheck size={13} strokeWidth={2.5} /> On Leave
+                              </span>
+                            ) : is1stMarked && !is2ndMarked ? (
+                              is2ndOpen ? (
+                                <span className="status-pill-badge" style={{ background: '#dbeafe', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
+                                  <Clock size={13} /> 2nd Window Live
+                                </span>
+                              ) : session.second_attendance?.status === 'closed' ? (
+                                <span className="status-pill-badge" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a' }}>
+                                  <AlertTriangle size={13} /> Incomplete (Missed 2nd)
+                                </span>
+                              ) : (
+                                <span className="status-pill-badge" style={{ background: '#e0f2fe', color: '#0369a1', border: '1px solid #bae6fd' }}>
+                                  <Clock size={13} /> 1st Done • Wait for 2nd
+                                </span>
+                              )
+                            ) : isPhase2NotEligible ? (
+                              <span className="status-pill-badge" style={{ background: '#fee2e2', color: '#dc2626', border: '1px solid #fecaca' }}>
+                                <AlertTriangle size={13} /> Missed 1st (Not Eligible)
+                              </span>
+                            ) : is1stOpen ? (
+                              <span className="status-pill-badge" style={{ background: '#dbeafe', color: '#1d4ed8', border: '1px solid #bfdbfe' }}>
+                                <Clock size={13} /> 1st Window Live
+                              </span>
+                            ) : (
+                              <span className="status-pill-badge upcoming">
+                                Upcoming
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Two Windows Breakdown Grid */}
+                        <div className="multi-phase-windows-grid">
+                          {/* Window 1 */}
+                          <div className={`multi-phase-subcard ${is1stMarked ? 'marked' : is1stOpen ? 'live' : ''}`}>
+                            <div className="subcard-top">
+                              <div className="subcard-title">
+                                <span className="phase-number-tag">1</span>
+                                <span>First Attendance</span>
+                              </div>
+                              {is1stMarked ? (
+                                <span className="subcard-status-badge marked">
+                                  <CheckCircle size={12} strokeWidth={2.5} /> {session.first_attendance?.is_late ? 'Late' : 'Present'}
+                                </span>
+                              ) : is1stOpen ? (
+                                <span className="subcard-status-badge live">● Live Now</span>
+                              ) : session.first_attendance?.status === 'closed' ? (
+                                <span className="subcard-status-badge missed">Missed</span>
+                              ) : (
+                                <span className="subcard-status-badge upcoming">Upcoming</span>
+                              )}
+                            </div>
+                            <div className="subcard-time">
+                              <Clock size={12} />
+                              <span>{formatTo12Hour(session.first_attendance?.start_time || session.start_time)} – {formatTo12Hour(session.first_attendance?.end_time || session.end_time)}</span>
+                            </div>
+                            {session.first_attendance?.late_time && (
+                              <div className="subcard-note">
+                                Late after {formatTo12Hour(session.first_attendance.late_time)}
+                              </div>
+                            )}
+                            {is1stMarked ? (
+                              <div className="subcard-marked-info">
+                                Recorded at {session.first_attendance?.marked_at || 'Done'}
+                              </div>
+                            ) : is1stOpen && session.can_mark ? (
+                              <button
+                                className="mark-attendance-btn subcard-cta-btn"
+                                onClick={() => handleOpenMarkModal(session)}
+                              >
+                                <Fingerprint size={15} /> Mark 1st Attendance
+                              </button>
+                            ) : null}
+                          </div>
+
+                          {/* Window 2 */}
+                          <div className={`multi-phase-subcard ${is2ndMarked ? 'marked' : is2ndOpen && is1stMarked ? 'live' : isPhase2NotEligible ? 'not-eligible' : ''}`}>
+                            <div className="subcard-top">
+                              <div className="subcard-title">
+                                <span className="phase-number-tag">2</span>
+                                <span>Second Attendance</span>
+                              </div>
+                              {is2ndMarked ? (
+                                <span className="subcard-status-badge marked">
+                                  <CheckCircle size={12} strokeWidth={2.5} /> {session.second_attendance?.is_late ? 'Late' : 'Present'}
+                                </span>
+                              ) : isPhase2NotEligible ? (
+                                <span className="subcard-status-badge not-eligible" title="Only students who attended 1st window can mark 2nd window">
+                                  Not Eligible
+                                </span>
+                              ) : is2ndOpen ? (
+                                <span className="subcard-status-badge live">● Live Now</span>
+                              ) : session.second_attendance?.status === 'closed' ? (
+                                <span className="subcard-status-badge missed">Missed</span>
+                              ) : (
+                                <span className="subcard-status-badge upcoming">Upcoming</span>
+                              )}
+                            </div>
+                            <div className="subcard-time">
+                              <Clock size={12} />
+                              <span>{formatTo12Hour(session.second_attendance?.start_time || session.phase2_start_time)} – {formatTo12Hour(session.second_attendance?.end_time || session.phase2_end_time)}</span>
+                            </div>
+                            {session.second_attendance?.late_time && (
+                              <div className="subcard-note">
+                                Late after {formatTo12Hour(session.second_attendance.late_time)}
+                              </div>
+                            )}
+                            {is2ndMarked ? (
+                              <div className="subcard-marked-info">
+                                Recorded at {session.second_attendance?.marked_at || 'Done'}
+                              </div>
+                            ) : isPhase2NotEligible ? (
+                              <div className="subcard-eligibility-warning">
+                                <AlertTriangle size={12} /> Missed 1st window; cannot mark 2nd.
+                              </div>
+                            ) : is2ndOpen && session.can_mark ? (
+                              <button
+                                className="mark-attendance-btn subcard-cta-btn"
+                                onClick={() => handleOpenMarkModal(session)}
+                              >
+                                <Fingerprint size={15} /> Mark 2nd Attendance
+                              </button>
+                            ) : null}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
                 const isMarked = session.status === 'marked' || session.is_marked || session.is_present || locallyMarkedSessions.has(session.session_key);
                 const isOnLeave = (session.status === 'leave' || session.is_on_leave) && !isMarked;
                 const isAbsent = !isMarked && !isOnLeave;
@@ -1085,7 +1367,7 @@ export const StudentDashboard: React.FC = () => {
                     <div className={cardClass}>
                       <div className="session-left-group">
                         {getSessionIcon(session)}
-                        
+
                         <div className="session-info-group">
                           <h4 className="session-name-text">{session.session_name}</h4>
                           <div className="session-time-text">
@@ -1140,7 +1422,7 @@ export const StudentDashboard: React.FC = () => {
       {selectedForm && (
         <div className="modal-overlay" onClick={() => setSelectedForm(null)}>
           <div className="form-modal-box" onClick={(e) => e.stopPropagation()}>
-            <button 
+            <button
               className="modal-close-btn"
               onClick={() => setSelectedForm(null)}
             >
@@ -1196,14 +1478,14 @@ export const StudentDashboard: React.FC = () => {
                         {field.type === 'radio' && (
                           <div className="form-options-group">
                             {(field.options || []).map((opt) => (
-                              <label 
-                                key={opt} 
+                              <label
+                                key={opt}
                                 className={`choice-option-row ${currentVal === opt ? 'selected' : ''}`}
                               >
-                                <input 
-                                  type="radio" 
-                                  name={`field_${field.id}`} 
-                                  value={opt} 
+                                <input
+                                  type="radio"
+                                  name={`field_${field.id}`}
+                                  value={opt}
                                   checked={currentVal === opt}
                                   disabled={isReadOnly}
                                   onChange={() => handleAnswerChange(field.id, opt)}
@@ -1220,14 +1502,14 @@ export const StudentDashboard: React.FC = () => {
                             {(field.options || []).map((opt) => {
                               const isChecked = Array.isArray(currentVal) && currentVal.includes(opt);
                               return (
-                                <label 
-                                  key={opt} 
+                                <label
+                                  key={opt}
                                   className={`choice-option-row ${isChecked ? 'selected' : ''}`}
                                 >
-                                  <input 
-                                    type="checkbox" 
-                                    name={`field_${field.id}_${opt}`} 
-                                    value={opt} 
+                                  <input
+                                    type="checkbox"
+                                    name={`field_${field.id}_${opt}`}
+                                    value={opt}
                                     checked={isChecked}
                                     disabled={isReadOnly}
                                     onChange={() => handleCheckboxToggle(field.id, opt)}
@@ -1272,10 +1554,10 @@ export const StudentDashboard: React.FC = () => {
                                 className="star-btn"
                                 onClick={() => handleAnswerChange(field.id, star)}
                               >
-                                <Star 
-                                  size={30} 
-                                  fill={(currentVal || 0) >= star ? '#f59e0b' : 'none'} 
-                                  color={(currentVal || 0) >= star ? '#f59e0b' : '#cbd5e1'} 
+                                <Star
+                                  size={30}
+                                  fill={(currentVal || 0) >= star ? '#f59e0b' : 'none'}
+                                  color={(currentVal || 0) >= star ? '#f59e0b' : '#cbd5e1'}
                                 />
                               </button>
                             ))}
@@ -1284,8 +1566,8 @@ export const StudentDashboard: React.FC = () => {
 
                         {/* Short Text */}
                         {field.type === 'text' && (
-                          <input 
-                            type="text" 
+                          <input
+                            type="text"
                             className="form-text-input"
                             placeholder="Type your response..."
                             value={currentVal || ''}
@@ -1296,7 +1578,7 @@ export const StudentDashboard: React.FC = () => {
 
                         {/* Textarea */}
                         {field.type === 'textarea' && (
-                          <textarea 
+                          <textarea
                             rows={3}
                             className="form-textarea-input"
                             placeholder="Type your detailed response..."
@@ -1318,17 +1600,17 @@ export const StudentDashboard: React.FC = () => {
                 )}
 
                 <div className="form-modal-actions">
-                  <button 
-                    type="button" 
-                    className="modal-close-btn" 
+                  <button
+                    type="button"
+                    className="modal-close-btn"
                     style={{ position: 'static', padding: '0.75rem 1.25rem', borderRadius: '12px', background: '#f1f5f9' }}
                     onClick={() => setSelectedForm(null)}
                   >
                     {selectedForm.has_submitted ? 'Close' : 'Cancel'}
                   </button>
                   {!selectedForm.has_submitted && (
-                    <button 
-                      type="button" 
+                    <button
+                      type="button"
                       className="form-submit-btn"
                       disabled={isSubmittingForm}
                       onClick={handleSubmitFormResponse}
@@ -1345,11 +1627,26 @@ export const StudentDashboard: React.FC = () => {
 
       {/* Mark Attendance Modal */}
       {markingSession && (() => {
-        const isSessionAlreadyMarked = markingSession.status === 'marked' || markingSession.is_marked || locallyMarkedSessions.has(markingSession.session_key);
+        const isTwoPhase = Boolean(markingSession.has_multiple_attendance);
+        const activePhase = markingSession.active_phase || 1;
+        const isSessionAlreadyMarked = isTwoPhase
+          ? (activePhase === 1 ? markingSession.first_attendance?.is_marked : markingSession.second_attendance?.is_marked)
+          : (markingSession.status === 'marked' || markingSession.is_marked || locallyMarkedSessions.has(markingSession.session_key));
+        const isNotEligibleForPhase2 = isTwoPhase && activePhase === 2 && !markingSession.first_attendance?.is_marked;
+        const windowTimeText = isTwoPhase
+          ? (activePhase === 1
+            ? `Window 1: ${formatTo12Hour(markingSession.first_attendance?.start_time || markingSession.start_time)} – ${formatTo12Hour(markingSession.first_attendance?.end_time || markingSession.end_time)}`
+            : `Window 2: ${formatTo12Hour(markingSession.second_attendance?.start_time || markingSession.phase2_start_time)} – ${formatTo12Hour(markingSession.second_attendance?.end_time || markingSession.phase2_end_time)}`)
+          : `Session window: ${formatTo12Hour(markingSession.start_time)} – ${formatTo12Hour(markingSession.end_time)}`;
+
+        const modalTitle = isTwoPhase
+          ? `${markingSession.session_name} (${activePhase === 2 ? '2nd Attendance' : '1st Attendance'})`
+          : `${markingSession.session_name} Attendance`;
+
         return (
           <div className="modal-overlay" onClick={() => !isMarking && setMarkingSession(null)}>
             <div className="modal-content-box" onClick={(e) => e.stopPropagation()}>
-              <button 
+              <button
                 className="modal-close-btn"
                 onClick={() => {
                   if (!isMarking) {
@@ -1363,14 +1660,14 @@ export const StudentDashboard: React.FC = () => {
               </button>
 
               <div className="modal-header-icon-box">
-                {isSessionAlreadyMarked ? <CheckCircle size={28} color="#10b981" /> : <Fingerprint size={28} />}
+                {isSessionAlreadyMarked ? <CheckCircle size={28} color="#10b981" /> : isNotEligibleForPhase2 ? <AlertTriangle size={28} color="#dc2626" /> : <Fingerprint size={28} />}
               </div>
 
               <h3 className="modal-title">
-                {markingSession.session_name} Attendance
+                {modalTitle}
               </h3>
               <p className="modal-subtitle">
-                Session window: {formatTo12Hour(markingSession.start_time)} – {formatTo12Hour(markingSession.end_time)}
+                {windowTimeText}
               </p>
 
               {markSuccess ? (
@@ -1385,13 +1682,32 @@ export const StudentDashboard: React.FC = () => {
                     {markSuccess}
                   </p>
                 </div>
+              ) : isNotEligibleForPhase2 ? (
+                <div className="modal-success-box" style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
+                  <div className="modal-success-icon-wrap" style={{ background: '#fee2e2', color: '#dc2626' }}>
+                    <AlertTriangle size={44} />
+                  </div>
+                  <h4 className="modal-success-title" style={{ color: '#991b1b' }}>
+                    Not Eligible for Second Attendance
+                  </h4>
+                  <p className="modal-success-msg" style={{ color: '#b91c1c' }}>
+                    You did not complete the first attendance window for this session. In two-phase attendance, only students who marked the first attendance are permitted to mark the second attendance.
+                  </p>
+                  <button
+                    className="mark-already-done-close-btn"
+                    style={{ background: '#dc2626' }}
+                    onClick={() => setMarkingSession(null)}
+                  >
+                    Close
+                  </button>
+                </div>
               ) : isSessionAlreadyMarked ? (
                 <div className="modal-success-box">
                   <div className="modal-success-icon-wrap" style={{ background: '#ecfdf5', color: '#059669' }}>
                     <CheckCircle size={44} />
                   </div>
                   <h4 className="modal-success-title" style={{ color: '#065f46' }}>
-                    Attendance Already Marked
+                    {isTwoPhase ? `${activePhase === 2 ? '2nd' : '1st'} Attendance Already Marked` : 'Attendance Already Marked'}
                   </h4>
                   <p className="modal-success-msg" style={{ color: '#047857' }}>
                     Your attendance for {markingSession.session_name} is already confirmed and recorded in the database.
@@ -1417,7 +1733,7 @@ export const StudentDashboard: React.FC = () => {
 
                   <div className="modal-scan-text-wrap">
                     <div className="modal-scan-status">
-                      {isMarking ? 'Scanning for Classroom ESP32...' : 'Tap to Mark Attendance'}
+                      {isMarking ? 'Scanning for Classroom ESP32...' : `Tap to Mark ${isTwoPhase ? (activePhase === 2 ? '2nd Attendance' : '1st Attendance') : 'Attendance'}`}
                     </div>
                     <div className="modal-scan-hint">
                       Ensure Bluetooth & Location are enabled on your device.

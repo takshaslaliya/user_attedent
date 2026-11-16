@@ -2340,4 +2340,183 @@
   cursor: not-allowed;
 }
 
+/* ==========================================================================
+   Two-Phase / Multiple Attendance Styles
+   ========================================================================== */
+.session-card.multi-phase-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.multi-phase-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.multi-phase-indicator-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #ede9fe;
+  color: #6d28d9;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  border: 1px solid #ddd6fe;
+}
+
+.multi-phase-overall-badge-wrap {
+  display: flex;
+  align-items: center;
+}
+
+.multi-phase-windows-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.multi-phase-subcard {
+  background: #f8fafc;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  transition: all 0.2s ease;
+}
+
+.multi-phase-subcard.live {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.08);
+}
+
+.multi-phase-subcard.marked {
+  border-color: #a7f3d0;
+  background: #f0fdf4;
+}
+
+.multi-phase-subcard.not-eligible {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.subcard-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.subcard-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.phase-number-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #6366f1;
+  color: #ffffff;
+  font-size: 0.65rem;
+  font-weight: 800;
+}
+
+.subcard-status-badge {
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.subcard-status-badge.marked {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.subcard-status-badge.live {
+  background: #dbeafe;
+  color: #1d4ed8;
+  animation: pulse-border 1.8s infinite ease-in-out;
+}
+
+.subcard-status-badge.missed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.subcard-status-badge.not-eligible {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.subcard-status-badge.upcoming {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.subcard-time {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #475569;
+}
+
+.subcard-note {
+  font-size: 0.7rem;
+  color: #d97706;
+  font-weight: 600;
+}
+
+.subcard-marked-info {
+  font-size: 0.72rem;
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.subcard-eligibility-warning {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: #dc2626;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.subcard-cta-btn {
+  margin-top: 0.35rem;
+  width: 100%;
+  justify-content: center;
+}
+
+.active-session-banner.banner-not-eligible {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+
 
