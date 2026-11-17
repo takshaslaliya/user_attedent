@@ -457,7 +457,11 @@ export const StudentDashboard: React.FC = () => {
     }
   };
 
-  const handleOpenMarkModal = (session: ScheduleItem) => {
+  const [targetModalPhase, setTargetModalPhase] = useState<1 | 2>(1);
+
+  const handleOpenMarkModal = (session: ScheduleItem, targetPhase?: 1 | 2) => {
+    const defaultPhase = targetPhase || (session.active_phase === 2 ? 2 : 1);
+    setTargetModalPhase(defaultPhase);
     setMarkingSession(session);
     setMarkError('');
     setMarkSuccess('');
@@ -489,12 +493,13 @@ export const StudentDashboard: React.FC = () => {
       // 2. Disconnect from ESP32 immediately to free up BLE slot for classmates
       bleConnection.disconnect();
 
-      // 3. Submit verified token with session_key and floor_id to backend
+      // 3. Submit verified token with session_key, floor_id, and target_phase to backend
       const res = await apiClient.post('/attendance/mark', {
         proof: tokenToUse,
         rssi: -50,
         floor_id: studentFloorId,
-        session_key: session.session_key
+        session_key: session.session_key,
+        target_phase: targetModalPhase
       });
 
       if (res.data.success) {
@@ -900,7 +905,7 @@ export const StudentDashboard: React.FC = () => {
               ) : (
                 <button
                   className="active-banner-cta"
-                  onClick={() => handleOpenMarkModal(activeLiveSession)}
+                  onClick={() => handleOpenMarkModal(activeLiveSession, activeLiveSession.active_phase === 2 ? 2 : 1)}
                 >
                   <Fingerprint size={16} /> {buttonLabel}
                 </button>
@@ -1289,7 +1294,7 @@ export const StudentDashboard: React.FC = () => {
                             ) : is1stOpen && session.can_mark ? (
                               <button
                                 className="mark-attendance-btn subcard-cta-btn"
-                                onClick={() => handleOpenMarkModal(session)}
+                                onClick={() => handleOpenMarkModal(session, 1)}
                               >
                                 <Fingerprint size={15} /> Mark 1st Attendance
                               </button>
@@ -1339,7 +1344,7 @@ export const StudentDashboard: React.FC = () => {
                             ) : is2ndOpen && session.can_mark ? (
                               <button
                                 className="mark-attendance-btn subcard-cta-btn"
-                                onClick={() => handleOpenMarkModal(session)}
+                                onClick={() => handleOpenMarkModal(session, 2)}
                               >
                                 <Fingerprint size={15} /> Mark 2nd Attendance
                               </button>
@@ -1643,7 +1648,7 @@ export const StudentDashboard: React.FC = () => {
       {/* Mark Attendance Modal */}
       {markingSession && (() => {
         const isTwoPhase = Boolean(markingSession.has_multiple_attendance);
-        const activePhase = markingSession.active_phase || 1;
+        const activePhase = targetModalPhase || markingSession.active_phase || 1;
         const isSessionAlreadyMarked = isTwoPhase
           ? (activePhase === 1 ? markingSession.first_attendance?.is_marked : markingSession.second_attendance?.is_marked)
           : (markingSession.status === 'marked' || markingSession.is_marked || locallyMarkedSessions.has(markingSession.session_key));
