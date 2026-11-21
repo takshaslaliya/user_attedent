@@ -39,10 +39,11 @@
   border-radius: 12px;
   margin-right: 1.2rem;
 }
-.kpi-icon.blue { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-.kpi-icon.green { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-.kpi-icon.orange { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
-.kpi-icon.red { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+.kpi-icon.blue { background: #eef2ff; color: #4361ee; }
+.kpi-icon.green { background: #e6f5f3; color: #2a9d8f; }
+.kpi-icon.orange { background: #fdf6ea; color: #e09f3e; }
+.kpi-icon.purple { background: #f2f1fa; color: #7b73d1; }
+.kpi-icon.red { background: #fdf1ee; color: #e76f51; }
 
 .kpi-info {
   display: flex;

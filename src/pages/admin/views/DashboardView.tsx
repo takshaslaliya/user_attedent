@@ -148,7 +148,7 @@ export const DashboardView: React.FC = () => {
       {/* KPI Grid */}
       <div className="kpi-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '24px' }}>
         <HamsCard padding="1.5rem" className="kpi-card">
-          <div className="kpi-icon blue"><Users size={24} color="#3b82f6" /></div>
+          <div className="kpi-icon blue" style={{ background: '#EEF2FF', color: '#4361EE' }}><Users size={24} color="#4361EE" /></div>
           <div className="kpi-info" style={{ marginTop: '12px' }}>
             <span className="kpi-label" style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-muted)' }}>Total Students</span>
             <span className="kpi-value" style={{ display: 'block', fontSize: '28px', fontWeight: 'bold' }}>{stats.total_students}</span>
@@ -156,42 +156,42 @@ export const DashboardView: React.FC = () => {
         </HamsCard>
 
         <HamsCard padding="1.5rem" className="kpi-card">
-          <div className="kpi-icon green"><CheckCircle size={24} color="#22c55e" /></div>
+          <div className="kpi-icon green" style={{ background: '#E6F5F3', color: '#2A9D8F' }}><CheckCircle size={24} color="#2A9D8F" /></div>
           <div className="kpi-info" style={{ marginTop: '12px' }}>
             <span className="kpi-label" style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-muted)' }}>
               Present ({currentSessionName})
             </span>
-            <span className="kpi-value" style={{ display: 'block', fontSize: '28px', fontWeight: 'bold', color: '#22c55e' }}>{stats.present_today}</span>
+            <span className="kpi-value" style={{ display: 'block', fontSize: '28px', fontWeight: 'bold', color: '#2A9D8F' }}>{stats.present_today}</span>
           </div>
         </HamsCard>
 
         <HamsCard padding="1.5rem" className="kpi-card">
-          <div className="kpi-icon orange"><Clock size={24} color="#f59e0b" /></div>
+          <div className="kpi-icon orange" style={{ background: '#FDF6EA', color: '#E09F3E' }}><Clock size={24} color="#E09F3E" /></div>
           <div className="kpi-info" style={{ marginTop: '12px' }}>
             <span className="kpi-label" style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-muted)' }}>
               Late ({currentSessionName})
             </span>
-            <span className="kpi-value" style={{ display: 'block', fontSize: '28px', fontWeight: 'bold', color: '#f59e0b' }}>{stats.late_today}</span>
+            <span className="kpi-value" style={{ display: 'block', fontSize: '28px', fontWeight: 'bold', color: '#E09F3E' }}>{stats.late_today}</span>
           </div>
         </HamsCard>
 
         <HamsCard padding="1.5rem" className="kpi-card">
-          <div className="kpi-icon purple" style={{ color: '#8b5cf6' }}><Calendar size={24} color="#8b5cf6" /></div>
+          <div className="kpi-icon purple" style={{ background: '#F2F1FA', color: '#7B73D1' }}><Calendar size={24} color="#7B73D1" /></div>
           <div className="kpi-info" style={{ marginTop: '12px' }}>
             <span className="kpi-label" style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-muted)' }}>
               Leave Today
             </span>
-            <span className="kpi-value" style={{ display: 'block', fontSize: '28px', fontWeight: 'bold', color: '#8b5cf6' }}>{stats.leave_today || 0}</span>
+            <span className="kpi-value" style={{ display: 'block', fontSize: '28px', fontWeight: 'bold', color: '#7B73D1' }}>{stats.leave_today || 0}</span>
           </div>
         </HamsCard>
 
         <HamsCard padding="1.5rem" className="kpi-card">
-          <div className="kpi-icon red"><XCircle size={24} color="#ef4444" /></div>
+          <div className="kpi-icon red" style={{ background: '#FDF1EE', color: '#E76F51' }}><XCircle size={24} color="#E76F51" /></div>
           <div className="kpi-info" style={{ marginTop: '12px' }}>
             <span className="kpi-label" style={{ display: 'block', fontSize: '13px', color: 'var(--color-text-muted)' }}>
               Absent ({currentSessionName})
             </span>
-            <span className="kpi-value" style={{ display: 'block', fontSize: '28px', fontWeight: 'bold', color: '#ef4444' }}>{stats.absent_today}</span>
+            <span className="kpi-value" style={{ display: 'block', fontSize: '28px', fontWeight: 'bold', color: '#E76F51' }}>{stats.absent_today}</span>
           </div>
         </HamsCard>
       </div>
@@ -208,15 +208,23 @@ export const DashboardView: React.FC = () => {
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData} margin={{ top: 20, right: 0, left: -20, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--color-border)" vertical={false} />
+                  <CartesianGrid strokeDasharray="4 4" stroke="rgba(226, 232, 240, 0.6)" vertical={false} />
                   <XAxis dataKey="name" stroke="var(--color-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
                   <YAxis stroke="var(--color-text-muted)" fontSize={12} tickLine={false} axisLine={false} />
-                  <Tooltip cursor={{fill: 'rgba(255,255,255,0.05)'}} contentStyle={{backgroundColor: 'var(--color-bg-elevated)', border: 'none', borderRadius: '8px'}} />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(67, 97, 238, 0.04)' }}
+                    contentStyle={{
+                      backgroundColor: 'var(--color-bg-elevated)',
+                      border: '1px solid #e2e8f0',
+                      borderRadius: '10px',
+                      boxShadow: '0 10px 25px -5px rgba(15, 23, 42, 0.08)'
+                    }}
+                  />
                   <Legend verticalAlign="top" align="right" height={26} iconType="circle" />
-                  <Bar dataKey="present" name="Present" fill="var(--color-success, #22c55e)" radius={[4, 4, 0, 0]} barSize={12} />
-                  <Bar dataKey="late" name="Late" fill="var(--color-warning, #f59e0b)" radius={[4, 4, 0, 0]} barSize={12} />
-                  <Bar dataKey="leave" name="Leave" fill="#8b5cf6" radius={[4, 4, 0, 0]} barSize={12} />
-                  <Bar dataKey="absent" name="Absent" fill="#ef4444" radius={[4, 4, 0, 0]} barSize={12} />
+                  <Bar dataKey="present" name="Present" fill="#2A9D8F" radius={[6, 6, 0, 0]} barSize={12} />
+                  <Bar dataKey="late" name="Late" fill="#E09F3E" radius={[6, 6, 0, 0]} barSize={12} />
+                  <Bar dataKey="leave" name="Leave" fill="#7B73D1" radius={[6, 6, 0, 0]} barSize={12} />
+                  <Bar dataKey="absent" name="Absent" fill="#E76F51" radius={[6, 6, 0, 0]} barSize={12} />
                 </BarChart>
               </ResponsiveContainer>
             )}
