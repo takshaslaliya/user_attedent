@@ -389,7 +389,7 @@ export const MessageView: React.FC = () => {
             <Search size={18} color="var(--color-text-muted)" />
             <input 
               type="text" 
-              placeholder="Search Name/Bank Code/Room" 
+              placeholder="Search Name/Student ID/Room" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value.toLowerCase())}
             />
@@ -421,7 +421,7 @@ export const MessageView: React.FC = () => {
             <thead>
               <tr>
                 <th style={{ width: '40px' }}></th>
-                <th>Bank Code</th>
+                <th>Student ID</th>
                 <th>Name</th>
                 <th>Room</th>
                 <th>Phone</th>

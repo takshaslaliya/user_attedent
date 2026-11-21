@@ -196,7 +196,7 @@ export const LoginPage: React.FC = () => {
         }
       } else {
         setConfirmModal(null);
-        setError(response.data.message === 'Invalid Bank Code' ? 'Invalid code' : (response.data.message || 'Invalid code'));
+        setError(response.data.message === 'Invalid Bank Code' ? 'Invalid Student ID' : (response.data.message || 'Invalid Student ID'));
       }
     } catch (err: any) {
       setConfirmModal(null);
@@ -221,9 +221,9 @@ export const LoginPage: React.FC = () => {
         setBlockedInfo(blockData);
       } else if (err.response?.data?.message) {
         const msg = err.response.data.message;
-        setError(msg === 'Invalid Bank Code' ? 'Invalid code' : msg);
+        setError(msg === 'Invalid Bank Code' ? 'Invalid Student ID' : msg);
       } else {
-        setError('Invalid code');
+        setError('Invalid Student ID');
       }
     } finally {
       setIsLoggingIn(false);

@@ -517,7 +517,7 @@ export const StudentsView: React.FC = () => {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '10px', fontSize: '14px', color: '#334155' }}>
               <strong>Name:</strong> <span>{detailsModal.name || `${detailsModal.firstName || ''} ${detailsModal.lastName || ''}`.trim()}</span>
-              <strong>ID / Code:</strong> <span style={{ color: '#4f46e5', fontWeight: 700 }}>{detailsModal.bankCode}</span>
+              <strong>Student ID:</strong> <span style={{ color: '#4f46e5', fontWeight: 700 }}>{detailsModal.bankCode}</span>
               <strong>Room:</strong> <span>{detailsModal.room || detailsModal.room_number || 'Not Assigned'}</span>
               <strong>Floor:</strong> <span>{detailsModal.floor_name || (detailsModal.floor_id ? `Floor ${detailsModal.floor_id}` : 'Unassigned')}</span>
               <strong>Mobile:</strong> <span>{detailsModal.mobileNumber || detailsModal.phone || 'N/A'}</span>
