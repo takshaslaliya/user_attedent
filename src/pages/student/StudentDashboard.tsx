@@ -559,6 +559,13 @@ export const StudentDashboard: React.FC = () => {
       }
     } catch (err: any) {
       const respData = err.response?.data;
+      if (respData?.code === 'ACCOUNT_BLOCKED') {
+        setMarkError(
+          `${respData.message || 'You broke the rule. To unblock, go to the Administrator Office.'}` +
+          (respData.reason ? ` Reason: ${respData.reason}` : '')
+        );
+        return;
+      }
       if (respData?.code === 'NOT_ELIGIBLE_MISSED_FIRST') {
         setMarkError('Not Eligible: You missed the 1st attendance window. Second attendance is only available to students who attended the 1st window.');
         return;

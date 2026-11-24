@@ -81,9 +81,14 @@ apiClient.interceptors.response.use(
         reason: data.reason,
         blockedAt: data.blocked_at || new Date().toISOString()
       }));
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      if (window.location.pathname !== '/login') window.location.href = '/login';
+      // Marking attendance shows the message on the mark screen itself (StudentDashboard);
+      // any other request leaves the app for the blocked screen.
+      const isMark = String(error.config?.url || '').includes('/attendance/mark');
+      if (!isMark) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        if (window.location.pathname !== '/login') window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }
