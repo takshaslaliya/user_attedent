@@ -34,6 +34,61 @@ apiClient.interceptors.request.use((config) => {
   return Promise.reject(error);
 });
 
+/**
+ * POST that survives a server overload: when the request gets no answer (network error,
+ * timeout) or a busy/overload status, it waits and sends the *same* request again, up to
+ * `attempts` times. Waits grow (≈1.5 s, 3 s, 6 s) with a random part, so hundreds of phones
+ * retrying don't all hit the server in the same second. Only for requests that are safe to
+ * repeat (attendance marking is: a repeat answers "already marked").
+ */
+export async function postWithRetry<T = any>(
+  url: string,
+  body: any,
+  opts: { attempts?: number; onRetry?: (attempt: number, waitMs: number) => void } = {}
+) {
+  const attempts = opts.attempts ?? 4;
+  const RETRY_STATUSES = new Set([429, 500, 502, 503, 504, 508]);
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await apiClient.post<T>(url, body);
+    } catch (err: any) {
+      const status = err.response?.status;
+      const retryable = !err.response || RETRY_STATUSES.has(status);
+      if (!retryable || attempt >= attempts) throw err;
+      const waitMs = Math.round(1500 * 2 ** (attempt - 1) * (0.7 + Math.random() * 0.6));
+      opts.onRetry?.(attempt, waitMs);
+      await new Promise(resolve => setTimeout(resolve, waitMs));
+    }
+  }
+}
+
+/** True when the request never got a usable answer (offline, timeout, overloaded proxy). */
+export function isServerUnavailable(err: any): boolean {
+  return !err?.response || [502, 503, 504, 508].includes(err.response.status);
+}
+
+// Account blocked (edited login token, or by an admin): leave the app and show the
+// blocked screen with the reason on the login page.
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const data = error.response?.data;
+    if (error.response?.status === 403 && data?.code === 'ACCOUNT_BLOCKED') {
+      localStorage.setItem('hams_device_blocked_info', JSON.stringify({
+        isBlocked: true,
+        code: 'ACCOUNT_BLOCKED',
+        message: data.message,
+        reason: data.reason,
+        blockedAt: data.blocked_at || new Date().toISOString()
+      }));
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      if (window.location.pathname !== '/login') window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  }
+);
+
 // Mock interceptor to bypass backend errors when testing
 apiClient.interceptors.response.use(
   (response) => response,

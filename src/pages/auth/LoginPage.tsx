@@ -17,6 +17,8 @@ interface BlockedInfo {
   ipAddress?: string;
   boundIp?: string;
   blockedAt?: string;
+  /** ACCOUNT_BLOCKED only: why the admin/system blocked the account. */
+  reason?: string;
 }
 
 const isBluefyBrowser = (): boolean => {
@@ -54,6 +56,16 @@ export const LoginPage: React.FC = () => {
   }, []);
 
   const checkServerDeviceStatus = async (showFeedback = true) => {
+    // An account block is per student, not per device: /auth/device-status can't see it.
+    // It ends when a login succeeds after the admin unblocks; until then keep the screen.
+    if (blockedInfo?.code === 'ACCOUNT_BLOCKED') {
+      if (showFeedback) {
+        localStorage.removeItem('hams_device_blocked_info');
+        setBlockedInfo(null);
+        setStatusMessage('Try logging in again. If the admin has not unblocked your account yet, you will see this screen again.');
+      }
+      return;
+    }
     const deviceUuid = getOrCreateDeviceUuid();
     if (showFeedback) setIsCheckingStatus(true);
     setStatusMessage('');
@@ -213,7 +225,8 @@ export const LoginPage: React.FC = () => {
           attemptedUser: err.response?.data?.attempted_user || 'Student',
           ipAddress: err.response?.data?.ip_address || '',
           boundIp: err.response?.data?.bound_ip || '',
-          blockedAt: new Date().toISOString()
+          blockedAt: err.response?.data?.blocked_at || new Date().toISOString(),
+          reason: err.response?.data?.reason || undefined
         };
 
         // Persistently lock this device in localStorage
@@ -231,6 +244,7 @@ export const LoginPage: React.FC = () => {
   };
 
   const isAlreadyAssigned = blockedInfo?.code === 'ALREADY_ASSIGNED_PHONE';
+  const isAccountBlocked = blockedInfo?.code === 'ACCOUNT_BLOCKED';
 
   return (
     <>
@@ -270,8 +284,10 @@ export const LoginPage: React.FC = () => {
               </h2>
 
               <p style={{ fontSize: '13px', color: '#64748b', margin: '0 0 18px 0', lineHeight: 1.4 }}>
-                {isAlreadyAssigned 
-                  ? 'Your account is bound to another phone. Multiple device logins are blocked.' 
+                {isAccountBlocked
+                  ? 'Your account has been blocked for security reasons. It stays blocked on every phone until the Hostel Admin Office unblocks it.'
+                  : isAlreadyAssigned
+                  ? 'Your account is bound to another phone. Multiple device logins are blocked.'
                   : 'Multi-account login detected. This device has been locked to prevent proxy attendance.'}
               </p>
 
@@ -303,7 +319,11 @@ export const LoginPage: React.FC = () => {
                 </div>
                 
                 <div style={{ fontSize: '13px', color: '#7f1d1d', lineHeight: '1.5' }}>
-                  {isAlreadyAssigned ? (
+                  {isAccountBlocked ? (
+                    <div>
+                      Reason: <strong style={{ color: '#0f172a' }}>{blockedInfo.reason || blockedInfo.message}</strong>
+                    </div>
+                  ) : isAlreadyAssigned ? (
                     <div>
                       Account is already registered on phone/IP: <strong style={{ color: '#0f172a' }}>{blockedInfo.boundIp || 'Assigned Phone'}</strong>
                     </div>

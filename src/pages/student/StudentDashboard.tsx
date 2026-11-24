@@ -31,7 +31,7 @@ import {
   Lock
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import apiClient from '../../services/apiClient';
+import apiClient, { postWithRetry, isServerUnavailable } from '../../services/apiClient';
 import { connectToESP32 } from '../../services/bleService';
 import { RadarAnimation } from '../../components/RadarAnimation';
 import './StudentDashboard.css';
@@ -206,10 +206,29 @@ export const StudentDashboard: React.FC = () => {
     return () => clearInterval(clockTimer);
   }, []);
 
+  // Refresh every 20–30 s. The random part spreads hundreds of phones out instead of
+  // all asking in the same second; hidden tabs/apps don't poll and refresh on return.
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let stopped = false;
+    const schedule = () => {
+      if (stopped) return;
+      timer = setTimeout(async () => {
+        if (document.visibilityState === 'visible') await fetchStatus();
+        schedule();
+      }, 20000 + Math.random() * 10000);
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') fetchStatus();
+    };
     fetchStatus();
-    const interval = setInterval(fetchStatus, 8000);
-    return () => clearInterval(interval);
+    schedule();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   // Handle unauthorized auto-logout countdown
@@ -232,7 +251,10 @@ export const StudentDashboard: React.FC = () => {
       let response: any = null;
       try {
         response = await apiClient.get('/attendance/today-sessions');
-      } catch (tsErr) {
+      } catch (tsErr: any) {
+        // Older servers lack today-sessions (404). When the server is just busy, a second
+        // request would only add load: keep what's on screen and try at the next refresh.
+        if (tsErr?.response?.status !== 404) throw tsErr;
         response = await apiClient.get('/attendance/my-status');
       }
       if (response?.data && (response.data.success || response.data.status === 'ok')) {
@@ -493,14 +515,19 @@ export const StudentDashboard: React.FC = () => {
       // 2. Disconnect from ESP32 immediately to free up BLE slot for classmates
       bleConnection.disconnect();
 
-      // 3. Submit verified token with session_key, floor_id, and target_phase to backend
-      const res = await apiClient.post('/attendance/mark', {
+      // 3. Submit verified token with session_key, floor_id, and target_phase to backend.
+      // If the server is overloaded, the same request is re-sent automatically (no new
+      // Bluetooth scan needed); marking twice is safe, the server answers "already marked".
+      const res = await postWithRetry('/attendance/mark', {
         proof: tokenToUse,
         rssi: -50,
         floor_id: studentFloorId,
         session_key: session.session_key,
         target_phase: targetModalPhase
+      }, {
+        onRetry: (attempt) => setMarkError(`Server is busy, retrying automatically (${attempt}/3)… Please keep this screen open.`)
       });
+      setMarkError('');
 
       if (res.data.success) {
         if (session.has_multiple_attendance) {
@@ -555,6 +582,10 @@ export const StudentDashboard: React.FC = () => {
           message: respData?.message || 'You are not authorized. Please login again.',
           countdown: 3
         });
+        return;
+      }
+      if (isServerUnavailable(err)) {
+        setMarkError('The server is very busy right now. Wait a few seconds and tap again. Your attendance is safe to retry.');
         return;
       }
       setMarkError(err.response?.data?.message || err.message || 'An unexpected error occurred during attendance marking.');
