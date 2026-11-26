@@ -189,7 +189,8 @@ export const StudentDashboard: React.FC = () => {
   const hasAutoPoppedRef = useRef(false);
 
   // Shown when the attendance device says this phone's signal is too weak (too far away).
-  const [outOfRangePopup, setOutOfRangePopup] = useState(false);
+  // Text is the session's admin-written message for the phase (null = default text).
+  const [outOfRangePopup, setOutOfRangePopup] = useState<{ show: boolean; message: string | null }>({ show: false, message: null });
 
   const [unauthorizedModal, setUnauthorizedModal] = useState<{
     show: boolean;
@@ -563,8 +564,13 @@ export const StudentDashboard: React.FC = () => {
     } catch (err: any) {
       if (err?.code === 'OUT_OF_RANGE') {
         // The attendance device measured a weak signal: nothing was sent to the server.
-        setMarkError(err.message);
-        setOutOfRangePopup(true);
+        // The admin's message for this session and phase, if any.
+        const s: any = session;
+        const custom = s.has_multiple_attendance
+          ? (targetModalPhase === 2 ? s.second_attendance?.out_of_range_message : s.first_attendance?.out_of_range_message)
+          : s.out_of_range_message;
+        setMarkError(custom || err.message);
+        setOutOfRangePopup({ show: true, message: custom || null });
         return;
       }
       const respData = err.response?.data;
@@ -675,7 +681,7 @@ export const StudentDashboard: React.FC = () => {
     } catch (err: any) {
       if (err?.code === 'OUT_OF_RANGE') {
         setOneDayMarkError(err.message);
-        setOutOfRangePopup(true);
+        setOutOfRangePopup({ show: true, message: null });
         return;
       }
       if (err.response?.status === 409) {
@@ -1930,8 +1936,8 @@ export const StudentDashboard: React.FC = () => {
       )}
 
       {/* Unauthorized Device / Browser Modal */}
-      {outOfRangePopup && createPortal(
-        <div className="modal-overlay" onClick={() => setOutOfRangePopup(false)}>
+      {outOfRangePopup.show && createPortal(
+        <div className="modal-overlay" onClick={() => setOutOfRangePopup({ show: false, message: null })}>
           <div className="modal-content-box unauthorized-box" onClick={e => e.stopPropagation()} role="alertdialog" aria-labelledby="out-of-range-title">
             <div className="unauthorized-icon-wrap">
               <AlertTriangle size={34} />
@@ -1941,12 +1947,12 @@ export const StudentDashboard: React.FC = () => {
               You are out of range
             </h2>
 
-            <p className="unauthorized-desc">
-              Your phone is too far from the attendance device, so attendance was not marked.
-              Move closer to the device and tap Mark again.
+            <p className="unauthorized-desc" style={{ whiteSpace: 'pre-line' }}>
+              {outOfRangePopup.message
+                || 'Your phone is too far from the attendance device, so attendance was not marked. Move closer to the device and tap Mark again.'}
             </p>
 
-            <button onClick={() => setOutOfRangePopup(false)} className="unauthorized-relogin-btn">
+            <button onClick={() => setOutOfRangePopup({ show: false, message: null })} className="unauthorized-relogin-btn">
               OK
             </button>
           </div>
