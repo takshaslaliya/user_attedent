@@ -188,6 +188,9 @@ export const StudentDashboard: React.FC = () => {
   // Track auto-popup so it triggers once per dashboard visit for unsubmitted forms
   const hasAutoPoppedRef = useRef(false);
 
+  // Shown when the attendance device says this phone's signal is too weak (too far away).
+  const [outOfRangePopup, setOutOfRangePopup] = useState(false);
+
   const [unauthorizedModal, setUnauthorizedModal] = useState<{
     show: boolean;
     message: string;
@@ -558,6 +561,12 @@ export const StudentDashboard: React.FC = () => {
         throw new Error(res.data.message || 'Failed to mark attendance.');
       }
     } catch (err: any) {
+      if (err?.code === 'OUT_OF_RANGE') {
+        // The attendance device measured a weak signal: nothing was sent to the server.
+        setMarkError(err.message);
+        setOutOfRangePopup(true);
+        return;
+      }
       const respData = err.response?.data;
       if (respData?.code === 'ACCOUNT_BLOCKED') {
         setMarkError(
@@ -664,6 +673,11 @@ export const StudentDashboard: React.FC = () => {
         throw new Error(res.data?.message || 'Failed to mark attendance.');
       }
     } catch (err: any) {
+      if (err?.code === 'OUT_OF_RANGE') {
+        setOneDayMarkError(err.message);
+        setOutOfRangePopup(true);
+        return;
+      }
       if (err.response?.status === 409) {
         // Already marked
         setOneDaySessions(prev => prev.map(s => {
@@ -1916,6 +1930,30 @@ export const StudentDashboard: React.FC = () => {
       )}
 
       {/* Unauthorized Device / Browser Modal */}
+      {outOfRangePopup && createPortal(
+        <div className="modal-overlay" onClick={() => setOutOfRangePopup(false)}>
+          <div className="modal-content-box unauthorized-box" onClick={e => e.stopPropagation()} role="alertdialog" aria-labelledby="out-of-range-title">
+            <div className="unauthorized-icon-wrap">
+              <AlertTriangle size={34} />
+            </div>
+
+            <h2 className="unauthorized-title" id="out-of-range-title">
+              You are out of range
+            </h2>
+
+            <p className="unauthorized-desc">
+              Your phone is too far from the attendance device, so attendance was not marked.
+              Move closer to the device and tap Mark again.
+            </p>
+
+            <button onClick={() => setOutOfRangePopup(false)} className="unauthorized-relogin-btn">
+              OK
+            </button>
+          </div>
+        </div>,
+        document.body
+      )}
+
       {unauthorizedModal.show && createPortal(
         <div className="modal-overlay">
           <div className="modal-content-box unauthorized-box">

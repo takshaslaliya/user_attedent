@@ -95,13 +95,14 @@ export const connectToESP32 = async (options?: BLEAuthOptions): Promise<BLEConne
             if (rawResponse.startsWith('REJECT:FLOOR_MISMATCH')) {
               message = `Floor Mismatch: You are assigned to Floor ${options?.floorId}, but this ESP32 is registered to another floor. Please mark attendance on your own floor's beacon.`;
             } else if (rawResponse.startsWith('REJECT:TOO_FAR')) {
-              // Format: REJECT:TOO_FAR:<rssi>:<text>
-              message = 'You are too far from the attendance device. Move closer to it and tap again.';
+              // Format: REJECT:TOO_FAR:<rssi>:<text>. The ESP32 measured this phone's signal.
+              message = 'You are out of range. Move closer to the attendance device and try again.';
             } else {
               message = rawResponse.replace('REJECT:', '').trim() || 'The attendance device refused this request.';
             }
             const rejection: any = new Error(message);
             rejection.beaconReject = true;
+            if (rawResponse.startsWith('REJECT:TOO_FAR')) rejection.code = 'OUT_OF_RANGE';
             throw rejection;
           }
 
@@ -146,6 +147,8 @@ export const connectToESP32 = async (options?: BLEAuthOptions): Promise<BLEConne
     return { token, writeToken, disconnect };
   } catch (error: any) {
     console.error('BLE Error:', error);
+    // Keep the device's refusal as-is (its code drives the "out of range" pop-up).
+    if (error?.beaconReject) throw error;
     throw new Error(error.message || 'Failed to detect Bluetooth beacon.');
   }
 };
