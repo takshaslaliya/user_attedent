@@ -87,11 +87,22 @@ export const connectToESP32 = async (options?: BLEAuthOptions): Promise<BLEConne
           const rawResponse = new TextDecoder().decode(value).replace(/\0/g, '').trim();
           console.log('ESP32 Characteristic Raw Response:', rawResponse);
 
-          // Handle rejection or mismatch from ESP32
-          if (rawResponse.startsWith('REJECT:FLOOR_MISMATCH')) {
-            throw new Error(`Floor Mismatch: You are assigned to Floor ${options?.floorId}, but this ESP32 is registered to another floor. Please mark attendance on your own floor's beacon.`);
-          } else if (rawResponse.startsWith('REJECT:')) {
-            throw new Error(rawResponse.replace('REJECT:', '').trim());
+          // Handle rejection or mismatch from ESP32. These errors must stop the marking:
+          // they are flagged so the catch below re-throws them instead of falling back
+          // to beacon-only mode (which used to mark the student anyway).
+          if (rawResponse.startsWith('REJECT:')) {
+            let message: string;
+            if (rawResponse.startsWith('REJECT:FLOOR_MISMATCH')) {
+              message = `Floor Mismatch: You are assigned to Floor ${options?.floorId}, but this ESP32 is registered to another floor. Please mark attendance on your own floor's beacon.`;
+            } else if (rawResponse.startsWith('REJECT:TOO_FAR')) {
+              // Format: REJECT:TOO_FAR:<rssi>:<text>
+              message = 'You are too far from the attendance device. Move closer to it and tap again.';
+            } else {
+              message = rawResponse.replace('REJECT:', '').trim() || 'The attendance device refused this request.';
+            }
+            const rejection: any = new Error(message);
+            rejection.beaconReject = true;
+            throw rejection;
           }
 
           // Extract token from successful handshake response or fallback
@@ -114,7 +125,7 @@ export const connectToESP32 = async (options?: BLEAuthOptions): Promise<BLEConne
         }
       }
     } catch (gattErr: any) {
-      if (gattErr.message && (gattErr.message.includes('Floor Mismatch') || gattErr.message.includes('REJECT'))) {
+      if (gattErr?.beaconReject || (gattErr.message && (gattErr.message.includes('Floor Mismatch') || gattErr.message.includes('REJECT')))) {
         throw gattErr;
       }
       console.log('Beacon-only mode detected (No GATT service hosted):', gattErr.message);
